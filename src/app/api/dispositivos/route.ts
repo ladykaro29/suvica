@@ -262,9 +262,22 @@ export async function POST(req: NextRequest) {
       }
 
       if (!trabajadorExiste) {
-        const fallbackMatch = trabajadoresFallback.find(
-          (t) => t.id === trabajadorId || t.cedula === body?.trabajadorCedula
-        );
+        const fallbackMatch =
+          trabajadoresFallback.find(
+            (t) => t.id === trabajadorId || t.cedula === body?.trabajadorCedula
+          ) ||
+          (body?.trabajadorData?.cedula
+            ? {
+                cedula: String(body.trabajadorData.cedula).trim(),
+                nombre: String(body.trabajadorData.nombre || "TRABAJADOR").trim(),
+                cargo: String(body.trabajadorData.cargo || "TRABAJADOR").trim(),
+                departamento: String(
+                  body.trabajadorData.departamento || "GENERAL"
+                ).trim(),
+                empresa: String(body.trabajadorData.empresa || "SUVICA").trim(),
+              }
+            : null);
+
         if (fallbackMatch) {
           trabajadorExiste = await prisma.trabajador.upsert({
             where: { cedula: fallbackMatch.cedula },

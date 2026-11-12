@@ -28,6 +28,12 @@ import {
   PenTool,
 } from "lucide-react";
 import { SignaturePad } from "@/components/SignaturePad";
+import {
+  mergeServerDevicesWithVault,
+  saveDeviceToLocalVault,
+  markDeviceDeletedInVault,
+  getLocalVaultDevices,
+} from "@/lib/local-vault";
 
 type TipoEquipo = "Laptop" | "Celular" | "Radio" | "Otro";
 type PropiedadEquipo = "Corporativo" | "Personal";
@@ -100,13 +106,58 @@ export default function RegistrosPage() {
       const res = await fetch("/api/dispositivos");
       const data = await res.json();
       if (res.ok && Array.isArray(data.dispositivos)) {
-        setTodosDispositivos(data.dispositivos);
+        const { merged, missingOnServer } = mergeServerDevicesWithVault(
+          data.dispositivos
+        );
+        setTodosDispositivos(merged as DispositivoConTrabajador[]);
         if (data.storageMode) {
           setStorageMode(data.storageMode);
+        }
+
+        // Auto-resincronización: si el navegador tenía algún registro en la bóveda local que no estaba en la BD, subirlo automáticamente
+        if (missingOnServer.length > 0) {
+          for (const missing of missingOnServer) {
+            try {
+              const syncRes = await fetch("/api/dispositivos", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  trabajadorId: missing.trabajador.id,
+                  trabajadorCedula: missing.trabajador.cedula,
+                  trabajadorData: missing.trabajador,
+                  codigoInventario: missing.codigoInventario,
+                  tipoEquipo: missing.tipoEquipo,
+                  propiedad: missing.propiedad || "Corporativo",
+                  marcaModelo: missing.marcaModelo,
+                  serial: missing.serial,
+                  especificaciones: missing.especificaciones,
+                  macAddress: missing.macAddress,
+                  imei1: missing.imei1,
+                  imei2: missing.imei2,
+                  firmaConformidad: missing.firmaConformidad || null,
+                }),
+              });
+              if (syncRes.ok) {
+                const synced = await syncRes.json();
+                saveDeviceToLocalVault(synced);
+              }
+            } catch {
+              // Se reintentará en la próxima carga
+            }
+          }
+        }
+      } else {
+        const fallbackLocal = getLocalVaultDevices();
+        if (fallbackLocal.length > 0) {
+          setTodosDispositivos(fallbackLocal as DispositivoConTrabajador[]);
         }
       }
     } catch (error) {
       console.error("Error cargando dispositivos:", error);
+      const fallbackLocal = getLocalVaultDevices();
+      if (fallbackLocal.length > 0) {
+        setTodosDispositivos(fallbackLocal as DispositivoConTrabajador[]);
+      }
     } finally {
       setLoading(false);
     }
@@ -194,6 +245,7 @@ export default function RegistrosPage() {
       if (!res.ok) {
         throw new Error(data.error || "No se pudo actualizar el registro.");
       }
+      saveDeviceToLocalVault(data);
       setTodosDispositivos((prev) =>
         prev.map((item) => {
           if (item.id === editingDevice.id) return data;
@@ -234,6 +286,7 @@ export default function RegistrosPage() {
         method: "DELETE",
       });
       if (res.ok) {
+        markDeviceDeletedInVault(d.id);
         setTodosDispositivos((prev) => prev.filter((item) => item.id !== d.id));
       }
     } catch (error) {

@@ -35,6 +35,10 @@ import {
 import { compressImageClient } from "@/lib/image-compression";
 import { trabajadoresFallback } from "@/lib/fallback-store";
 import { SignaturePad } from "@/components/SignaturePad";
+import {
+  saveDeviceToLocalVault,
+  markDeviceDeletedInVault,
+} from "@/lib/local-vault";
 
 type TipoEquipo = "Laptop" | "Celular" | "Radio" | "Otro";
 type PropiedadEquipo = "Corporativo" | "Personal";
@@ -246,6 +250,7 @@ export default function CapturaInventarioPage() {
         method: "DELETE",
       });
       if (res.ok) {
+        markDeviceDeletedInVault(id);
         if (editingDeviceId === id) {
           resetDeviceForm();
         }
@@ -442,6 +447,13 @@ export default function CapturaInventarioPage() {
           ...(isEditing ? { id: editingDeviceId } : {}),
           trabajadorId: selectedTrabajador.id,
           trabajadorCedula: selectedTrabajador.cedula,
+          trabajadorData: {
+            cedula: selectedTrabajador.cedula,
+            nombre: selectedTrabajador.nombre,
+            cargo: selectedTrabajador.cargo,
+            departamento: selectedTrabajador.departamento,
+            empresa: selectedTrabajador.empresa,
+          },
           codigoInventario,
           tipoEquipo,
           propiedad,
@@ -460,6 +472,19 @@ export default function CapturaInventarioPage() {
       if (!response.ok) {
         throw new Error(data.error || "Error al guardar el equipo.");
       }
+
+      // Guardar también en la bóveda local del navegador como respaldo automático
+      saveDeviceToLocalVault({
+        ...data,
+        trabajador: data.trabajador || {
+          id: selectedTrabajador.id,
+          cedula: selectedTrabajador.cedula,
+          nombre: selectedTrabajador.nombre,
+          cargo: selectedTrabajador.cargo,
+          departamento: selectedTrabajador.departamento,
+          empresa: selectedTrabajador.empresa,
+        },
+      });
 
       // Actualización optimista inmediata en memoria (0ms) + sincronización en segundo plano
       const actuales = selectedTrabajador.dispositivos || [];
