@@ -11,6 +11,7 @@ export interface DispositivoDemo {
   id: string;
   codigoInventario: string | null;
   tipoEquipo: "Laptop" | "Celular" | "Radio" | "Otro";
+  propiedad: "Corporativo" | "Personal";
   marcaModelo: string | null;
   serial: string | null;
   especificaciones: string | null;

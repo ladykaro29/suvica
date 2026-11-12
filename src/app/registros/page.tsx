@@ -22,6 +22,7 @@ interface DispositivoConTrabajador {
   id: string;
   codigoInventario: string | null;
   tipoEquipo: "Laptop" | "Celular" | "Radio" | "Otro";
+  propiedad?: "Corporativo" | "Personal" | string;
   marcaModelo: string | null;
   serial: string | null;
   especificaciones: string | null;
@@ -46,6 +47,7 @@ export default function RegistrosPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState<string>("");
+  const [propiedadFiltro, setPropiedadFiltro] = useState<string>("");
   const [vistaModo, setVistaModo] = useState<"por-persona" | "por-equipo">(
     "por-persona"
   );
@@ -56,6 +58,7 @@ export default function RegistrosPage() {
       const params = new URLSearchParams();
       if (q.trim()) params.set("q", q.trim());
       if (tipoFiltro) params.set("tipo", tipoFiltro);
+      if (propiedadFiltro) params.set("propiedad", propiedadFiltro);
 
       const res = await fetch(`/api/dispositivos?${params.toString()}`);
       const data = await res.json();
@@ -67,7 +70,7 @@ export default function RegistrosPage() {
     } finally {
       setLoading(false);
     }
-  }, [q, tipoFiltro]);
+  }, [q, tipoFiltro, propiedadFiltro]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -224,7 +227,34 @@ export default function RegistrosPage() {
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >
-                {tipo || "Todos"}
+                {tipo || "Todos los Tipos"}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Filtro por Propiedad: Corporativo vs Personal */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+          {[
+            { id: "", label: "Corporativos y Personales" },
+            { id: "Corporativo", label: "Solo Corporativos" },
+            { id: "Personal", label: "Solo Personales" },
+          ].map((item) => {
+            const active = propiedadFiltro === item.id;
+            return (
+              <button
+                key={item.id || "all-prop"}
+                type="button"
+                onClick={() => setPropiedadFiltro(item.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition ${
+                  active
+                    ? item.id === "Personal"
+                      ? "bg-amber-500 text-white"
+                      : "bg-emerald-600 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {item.label}
               </button>
             );
           })}
@@ -281,10 +311,19 @@ export default function RegistrosPage() {
                       className="bg-slate-50 rounded-xl p-3 border border-slate-200/80 space-y-2"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md">
                             {getBadgeIcon(d.tipoEquipo)}
                             Equipo #{index + 1}: {d.tipoEquipo}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-md border ${
+                              d.propiedad === "Personal"
+                                ? "bg-amber-100 text-amber-800 border-amber-200"
+                                : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                            }`}
+                          >
+                            {d.propiedad || "Corporativo"}
                           </span>
                           <span className="text-xs font-bold text-slate-900">
                             {d.marcaModelo || "Sin modelo especificado"}
@@ -364,10 +403,21 @@ export default function RegistrosPage() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-md border border-blue-200">
-                      {getBadgeIcon(d.tipoEquipo)}
-                      {d.tipoEquipo}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-md border border-blue-200">
+                        {getBadgeIcon(d.tipoEquipo)}
+                        {d.tipoEquipo}
+                      </span>
+                      <span
+                        className={`text-[11px] font-bold uppercase px-2.5 py-0.5 rounded-md border ${
+                          d.propiedad === "Personal"
+                            ? "bg-amber-100 text-amber-800 border-amber-200"
+                            : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                        }`}
+                      >
+                        {d.propiedad || "Corporativo"}
+                      </span>
+                    </div>
                     <h3 className="text-sm font-bold text-slate-900 mt-1">
                       {d.marcaModelo || "Marca / Modelo no especificado"}
                     </h3>

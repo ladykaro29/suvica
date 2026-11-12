@@ -21,11 +21,13 @@ export async function GET(req: NextRequest) {
     const format = searchParams.get("format");
     const q = searchParams.get("q")?.trim();
     const tipo = searchParams.get("tipo")?.trim();
+    const propiedad = searchParams.get("propiedad")?.trim();
 
     let dispositivos: Array<{
       id: string;
       codigoInventario: string | null;
       tipoEquipo: string;
+      propiedad: string;
       marcaModelo: string | null;
       serial: string | null;
       especificaciones: string | null;
@@ -52,6 +54,9 @@ export async function GET(req: NextRequest) {
         where: {
           ...(tipo && ["Laptop", "Celular", "Radio", "Otro"].includes(tipo)
             ? { tipoEquipo: tipo as TipoEquipo }
+            : {}),
+          ...(propiedad && ["Corporativo", "Personal"].includes(propiedad)
+            ? { propiedad }
             : {}),
           ...(q
             ? {
@@ -87,6 +92,7 @@ export async function GET(req: NextRequest) {
     } catch {
       dispositivos = dispositivosFallback.filter((d) => {
         if (tipo && d.tipoEquipo !== tipo) return false;
+        if (propiedad && d.propiedad !== propiedad) return false;
         if (!q) return true;
         const term = q.toLowerCase();
         return (
@@ -127,6 +133,7 @@ export async function GET(req: NextRequest) {
         "Empresa",
         "Total Equipos del Trabajador",
         "Tipo de Equipo",
+        "Propiedad (Corporativo / Personal)",
         "Código Inventario",
         "Marca / Modelo",
         "Serial (S/N)",
@@ -146,6 +153,7 @@ export async function GET(req: NextRequest) {
         escapeCsvField(d.trabajador.empresa),
         escapeCsvField(String(conteoPorTrabajador.get(d.trabajador.id) || 1)),
         escapeCsvField(d.tipoEquipo),
+        escapeCsvField(d.propiedad || "Corporativo"),
         escapeCsvField(d.codigoInventario),
         escapeCsvField(d.marcaModelo),
         escapeCsvField(d.serial),
@@ -191,6 +199,7 @@ export async function POST(req: NextRequest) {
       trabajadorId,
       codigoInventario,
       tipoEquipo,
+      propiedad,
       marcaModelo,
       serial,
       especificaciones,
@@ -210,6 +219,9 @@ export async function POST(req: NextRequest) {
     const tipoFinal: TipoEquipo = tiposValidos.includes(tipoEquipo)
       ? tipoEquipo
       : "Otro";
+
+    const propiedadFinal: "Corporativo" | "Personal" =
+      propiedad === "Personal" ? "Personal" : "Corporativo";
 
     // Solo guardar IMEI si es Celular
     const esCelular = tipoFinal === "Celular";
@@ -235,6 +247,7 @@ export async function POST(req: NextRequest) {
           trabajadorId,
           codigoInventario: codigoInventario?.trim() || null,
           tipoEquipo: tipoFinal,
+          propiedad: propiedadFinal,
           marcaModelo: marcaModelo?.trim() || null,
           serial: serial?.trim()?.toUpperCase() || null,
           especificaciones: especificaciones?.trim() || null,
@@ -256,6 +269,7 @@ export async function POST(req: NextRequest) {
         id: `dev-demo-${Date.now()}`,
         codigoInventario: codigoInventario?.trim() || null,
         tipoEquipo: tipoFinal,
+        propiedad: propiedadFinal,
         marcaModelo: marcaModelo?.trim() || null,
         serial: serial?.trim()?.toUpperCase() || null,
         especificaciones: especificaciones?.trim() || null,

@@ -31,11 +31,13 @@ import {
 import { compressImageClient } from "@/lib/image-compression";
 
 type TipoEquipo = "Laptop" | "Celular" | "Radio" | "Otro";
+type PropiedadEquipo = "Corporativo" | "Personal";
 
 export interface DispositivoResumen {
   id: string;
   codigoInventario: string | null;
   tipoEquipo: TipoEquipo;
+  propiedad?: PropiedadEquipo | string;
   marcaModelo: string | null;
   serial: string | null;
   especificaciones: string | null;
@@ -91,8 +93,9 @@ export default function CapturaInventarioPage() {
   } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
 
-  // Estado del formulario de dispositivo (adaptable por tipo)
+  // Estado del formulario de dispositivo (adaptable por tipo y propiedad)
   const [tipoEquipo, setTipoEquipo] = useState<TipoEquipo>("Laptop");
+  const [propiedad, setPropiedad] = useState<PropiedadEquipo>("Corporativo");
   const [codigoInventario, setCodigoInventario] = useState("");
   const [marcaModelo, setMarcaModelo] = useState("");
   const [serial, setSerial] = useState("");
@@ -317,6 +320,7 @@ export default function CapturaInventarioPage() {
           trabajadorId: selectedTrabajador.id,
           codigoInventario,
           tipoEquipo,
+          propiedad,
           marcaModelo,
           serial,
           especificaciones,
@@ -735,9 +739,18 @@ export default function CapturaInventarioPage() {
                         className="text-xs bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/80 flex items-center justify-between gap-2"
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-[10px] font-bold uppercase bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">
                               #{dispositivosTrabajador.length - idx} • {d.tipoEquipo}
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                                d.propiedad === "Personal"
+                                  ? "bg-amber-100 text-amber-800 border border-amber-200"
+                                  : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              }`}
+                            >
+                              {d.propiedad || "Corporativo"}
                             </span>
                             <span className="font-bold text-slate-800 truncate">
                               {d.marcaModelo || "Sin modelo"}
@@ -972,6 +985,39 @@ export default function CapturaInventarioPage() {
                 </button>
               );
             })}
+          </div>
+        </div>
+
+        {/* Selector de Propiedad: Corporativo vs Personal */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            ¿El equipo ({tipoEquipo}) es Corporativo o Personal? *
+          </label>
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={() => setPropiedad("Corporativo")}
+              className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition ${
+                propiedad === "Corporativo"
+                  ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                  : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              <Building2 className="w-4 h-4" />
+              <span>Corporativo (Empresa)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPropiedad("Personal")}
+              className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition ${
+                propiedad === "Personal"
+                  ? "bg-amber-500 text-white border-amber-500 shadow-sm"
+                  : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>Personal (Propio)</span>
+            </button>
           </div>
         </div>
 

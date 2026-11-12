@@ -31,6 +31,7 @@ model Dispositivo {
   id               String     @id @default(cuid())
   codigoInventario String?
   tipoEquipo       TipoEquipo
+  propiedad        String     @default("Corporativo") // "Corporativo" | "Personal"
   marcaModelo      String?
   serial           String?
   especificaciones String?
@@ -43,5 +44,6 @@ model Dispositivo {
 
   @@index([trabajadorId])
   @@index([tipoEquipo])
+  @@index([propiedad])
   @@index([createdAt])
 }
