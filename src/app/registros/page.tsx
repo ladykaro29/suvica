@@ -90,6 +90,9 @@ export default function RegistrosPage() {
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [storageMode, setStorageMode] = useState<"postgresql" | "local" | null>(
+    null
+  );
 
   const cargarRegistros = useCallback(async () => {
     try {
@@ -98,6 +101,9 @@ export default function RegistrosPage() {
       const data = await res.json();
       if (res.ok && Array.isArray(data.dispositivos)) {
         setTodosDispositivos(data.dispositivos);
+        if (data.storageMode) {
+          setStorageMode(data.storageMode);
+        }
       }
     } catch (error) {
       console.error("Error cargando dispositivos:", error);
@@ -289,11 +295,26 @@ export default function RegistrosPage() {
       <section className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-base font-bold text-slate-900">
-              Inventario General ({dispositivos.length} equipos en{" "}
-              {gruposPorTrabajador.length}{" "}
-              {gruposPorTrabajador.length === 1 ? "empleado" : "empleados"})
-            </h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-base font-bold text-slate-900">
+                Inventario General ({dispositivos.length} equipos en{" "}
+                {gruposPorTrabajador.length}{" "}
+                {gruposPorTrabajador.length === 1 ? "empleado" : "empleados"})
+              </h2>
+              {storageMode && (
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    storageMode === "postgresql"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                      : "bg-amber-50 text-amber-700 border-amber-300"
+                  }`}
+                >
+                  {storageMode === "postgresql"
+                    ? "● BD PostgreSQL Permanente"
+                    : "● Memoria Local"}
+                </span>
+              )}
+            </div>
             <p className="text-xs text-slate-500">
               Toca el nombre de un empleado para desplegar sus dispositivos y
               firma

@@ -48,9 +48,12 @@ export async function GET(req: NextRequest) {
       };
     }> = [];
 
+    let storageMode: "postgresql" | "local" = "postgresql";
+    let dbWarning: string | null = null;
+
     try {
       if (!process.env.DATABASE_URL) {
-        throw new Error("Modo vista previa local");
+        throw new Error("Variable DATABASE_URL no configurada");
       }
 
       await ensurePostgresSchema();
@@ -94,7 +97,10 @@ export async function GET(req: NextRequest) {
           createdAt: "desc",
         },
       });
-    } catch {
+    } catch (err: unknown) {
+      storageMode = "local";
+      dbWarning = err instanceof Error ? err.message : "Conexión local";
+      console.warn("GET /api/dispositivos usando respaldo local:", dbWarning);
       loadFallbackFromDisk();
       dispositivos = dispositivosFallback.filter((d) => {
         if (tipo && d.tipoEquipo !== tipo) return false;
@@ -188,6 +194,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       total: dispositivos.length,
+      storageMode,
+      dbWarning,
       dispositivos,
     });
   } catch (error: unknown) {
@@ -246,6 +254,12 @@ export async function POST(req: NextRequest) {
       let trabajadorExiste = await prisma.trabajador.findUnique({
         where: { id: trabajadorId },
       });
+
+      if (!trabajadorExiste && body?.trabajadorCedula) {
+        trabajadorExiste = await prisma.trabajador.findUnique({
+          where: { cedula: String(body.trabajadorCedula).trim() },
+        });
+      }
 
       if (!trabajadorExiste) {
         const fallbackMatch = trabajadoresFallback.find(
@@ -389,7 +403,6 @@ export async function PUT(req: NextRequest) {
       const actualizado = await prisma.dispositivo.update({
         where: { id },
         data: {
-          ...(trabajadorId ? { trabajadorId } : {}),
           codigoInventario: codigoInventario?.trim() || null,
           tipoEquipo: tipoFinal,
           propiedad: propiedadFinal,
