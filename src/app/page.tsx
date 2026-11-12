@@ -24,6 +24,9 @@ import {
   Layers,
   Hash,
   FileText,
+  Plus,
+  Trash2,
+  UserCheck2,
 } from "lucide-react";
 import { compressImageClient } from "@/lib/image-compression";
 
@@ -64,6 +67,9 @@ export default function CapturaInventarioPage() {
   const [selectedTrabajador, setSelectedTrabajador] =
     useState<Trabajador | null>(null);
 
+  // Meta de cantidad de dispositivos a registrar para el trabajador actual
+  const [metaDispositivos, setMetaDispositivos] = useState<number>(2);
+
   // Modal rápido para crear trabajador en campo si no existe
   const [showNewWorkerModal, setShowNewWorkerModal] = useState(false);
   const [newWorker, setNewWorker] = useState({
@@ -97,10 +103,13 @@ export default function CapturaInventarioPage() {
 
   // Estado de guardado y notificaciones
   const [savingDevice, setSavingDevice] = useState(false);
+  const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<{
     type: "success" | "error" | "info";
     text: string;
   } | null>(null);
+
+  const formStepRef = useRef<HTMLDivElement | null>(null);
 
   // Cargar trabajadores (incluyendo su conteo y lista de dispositivos)
   const fetchTrabajadores = async (keepSelectedId?: string) => {
@@ -150,12 +159,15 @@ export default function CapturaInventarioPage() {
     setSearchQuery(`${t.nombre} (${t.cedula})`);
     setDropdownOpen(false);
     setStatusMessage(null);
+    const actuales = t._count?.dispositivos ?? t.dispositivos?.length ?? 0;
+    setMetaDispositivos(Math.max(actuales + 1, 2));
   };
 
   const handleClearTrabajador = () => {
     setSelectedTrabajador(null);
     setSearchQuery("");
     setDropdownOpen(true);
+    setStatusMessage(null);
   };
 
   // Cambiar tipo de equipo manualmente (limpia IMEI si cambia a un equipo sin IMEI)
@@ -164,6 +176,24 @@ export default function CapturaInventarioPage() {
     if (nuevoTipo !== "Celular") {
       setImei1("");
       setImei2("");
+    }
+  };
+
+  // Eliminar un dispositivo de la lista del trabajador si se registró por error
+  const handleDeleteDispositivo = async (id: string) => {
+    if (!selectedTrabajador) return;
+    setDeletingDeviceId(id);
+    try {
+      const res = await fetch(`/api/dispositivos?id=${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        await fetchTrabajadores(selectedTrabajador.id);
+      }
+    } catch (error) {
+      console.error("Error eliminando dispositivo:", error);
+    } finally {
+      setDeletingDeviceId(null);
     }
   };
 
@@ -229,7 +259,7 @@ export default function CapturaInventarioPage() {
         type: "info",
         text: `IA detectó: ${detectedType}${
           data.marcaModelo ? ` (${data.marcaModelo})` : ""
-        }. Verifica los campos antes de guardar.`,
+        }. Verifica los datos abajo y presiona Guardar para sumarlo al trabajador.`,
       });
     } catch (err: unknown) {
       const msg =
@@ -260,7 +290,7 @@ export default function CapturaInventarioPage() {
     setImei2("");
   };
 
-  // Guardar el dispositivo en PostgreSQL
+  // Guardar el dispositivo en PostgreSQL y dejar todo listo para el siguiente dispositivo del mismo trabajador
   const handleSaveDevice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTrabajador) {
@@ -296,15 +326,23 @@ export default function CapturaInventarioPage() {
         throw new Error(data.error || "Error al guardar el equipo.");
       }
 
+      const nuevoConteo = totalEquiposTrabajador + 1;
       resetDeviceForm();
       await fetchTrabajadores(selectedTrabajador.id);
 
-      setStatusMessage({
-        type: "success",
-        text: `Equipo (${data.tipoEquipo} ${
-          data.marcaModelo || ""
-        }) guardado para ${selectedTrabajador.nombre}. Si esta persona maneja otro dispositivo adicional, puedes escanearlo enseguida.`,
-      });
+      if (nuevoConteo < metaDispositivos) {
+        setStatusMessage({
+          type: "success",
+          text: `¡Dispositivo #${nuevoConteo} (${data.tipoEquipo}) guardado! Ahora toma la foto del Dispositivo #${
+            nuevoConteo + 1
+          } de ${selectedTrabajador.nombre}.`,
+        });
+      } else {
+        setStatusMessage({
+          type: "success",
+          text: `¡Dispositivo #${nuevoConteo} (${data.tipoEquipo}) guardado! Ya registraste los ${nuevoConteo} dispositivos de ${selectedTrabajador.nombre}. Puedes agregar otro más o cambiar de trabajador.`,
+        });
+      }
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "No se pudo guardar el registro.";
@@ -386,14 +424,16 @@ export default function CapturaInventarioPage() {
           placeholderModelo: "Ej. Samsung Galaxy A54 5G / Xiaomi Redmi Note 13",
           labelSerial: "Número de Serie (S/N)",
           placeholderSerial: "Ej. R58W40ABCDE (Opcional)",
-          labelSpecs: "Características (Capacidad GB, RAM, Modelo Técnico, Línea)",
+          labelSpecs:
+            "Características (Capacidad GB, RAM, Modelo Técnico, Línea)",
           placeholderSpecs: "Ej. 256GB / 8GB RAM • SM-A546E/DS • Corporativo",
           labelMac: "Dirección MAC Wi-Fi / Bluetooth (XX:XX:XX:XX:XX:XX)",
           mostrarImei: true,
         };
       case "Radio":
         return {
-          tituloSeccion: "Datos del Radio Portátil / Comunicaciones (Sin IMEI)",
+          tituloSeccion:
+            "Datos del Radio Portátil / Comunicaciones (Sin IMEI)",
           placeholderModelo: "Ej. Motorola MOTOTRBO R7 / DEP450 / Hytera",
           labelSerial: "Número de Serie del Radio (S/N) *",
           placeholderSerial: "Ej. 871TZN1492",
@@ -405,7 +445,7 @@ export default function CapturaInventarioPage() {
       default:
         return {
           tituloSeccion: "Datos del Equipo / Otro Activo (Sin IMEI)",
-          placeholderModelo: "Ej. Monitor Dell 24\" / Impresora Epson / Tablet",
+          placeholderModelo: 'Ej. Monitor Dell 24" / Impresora Epson / Tablet',
           labelSerial: "Número de Serie (S/N)",
           placeholderSerial: "Ej. CN-0ABC123-742",
           labelSpecs: "Especificaciones Técnicas / Estado / Accesorios",
@@ -418,14 +458,14 @@ export default function CapturaInventarioPage() {
 
   return (
     <div className="space-y-4">
-      {/* PASO 1: Selección de Trabajador y Cantidad de Dispositivos que Maneja */}
+      {/* PASO 1: Selección de Trabajador y Gestión de sus Múltiples Dispositivos */}
       <section className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80">
         <div className="flex items-center justify-between mb-2.5">
           <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
             <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[11px]">
               1
             </span>
-            Trabajador y Cantidad de Equipos
+            Trabajador y Sus Dispositivos
           </label>
           <button
             type="button"
@@ -433,7 +473,7 @@ export default function CapturaInventarioPage() {
             className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 bg-blue-50 px-2.5 py-1 rounded-lg"
           >
             <UserPlus className="w-3.5 h-3.5" />
-            Nuevo
+            Nuevo Trabajador
           </button>
         </div>
 
@@ -453,7 +493,7 @@ export default function CapturaInventarioPage() {
               placeholder={
                 loadingTrabajadores
                   ? "Cargando nómina de trabajadores..."
-                  : "Buscar por nombre o cédula (ej. V-15234890)..."
+                  : "Buscar trabajador por nombre o cédula (ej. V-15234890)..."
               }
               className="w-full pl-10 pr-9 py-3 rounded-xl border border-slate-300 bg-slate-50 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 outline-none transition"
             />
@@ -474,7 +514,9 @@ export default function CapturaInventarioPage() {
             <div className="absolute z-20 mt-1.5 w-full bg-white rounded-xl shadow-xl border border-slate-200 max-h-64 overflow-y-auto divide-y divide-slate-100">
               {filteredTrabajadores.length === 0 ? (
                 <div className="p-3.5 text-center text-xs text-slate-500 space-y-2">
-                  <p>No se encontraron trabajadores con &quot;{searchQuery}&quot;.</p>
+                  <p>
+                    No se encontraron trabajadores con &quot;{searchQuery}&quot;.
+                  </p>
                   <button
                     type="button"
                     onClick={() => {
@@ -532,7 +574,7 @@ export default function CapturaInventarioPage() {
           )}
         </div>
 
-        {/* Tarjeta resumen del trabajador seleccionado + Cantidad y Lista de Dispositivos que maneja */}
+        {/* Expediente de Múltiples Dispositivos del Trabajador Seleccionado */}
         {selectedTrabajador && (
           <div className="mt-3 bg-blue-50/70 border border-blue-200 rounded-xl p-3.5 space-y-3">
             <div className="flex items-start justify-between gap-2">
@@ -559,23 +601,84 @@ export default function CapturaInventarioPage() {
               <button
                 type="button"
                 onClick={handleClearTrabajador}
-                className="text-[11px] text-blue-700 hover:underline font-semibold shrink-0"
+                className="text-xs bg-white border border-blue-200 text-blue-700 hover:bg-blue-100 px-2.5 py-1 rounded-lg font-semibold shrink-0 transition"
               >
-                Cambiar
+                Cambiar Persona
               </button>
             </div>
 
-            {/* Contador de dispositivos que maneja esta persona */}
-            <div className="bg-white rounded-xl p-3 border border-blue-200/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <Layers className="w-4 h-4 text-blue-600" />
-                  Dispositivos que maneja esta persona:
-                </span>
-                <span className="text-xs font-extrabold bg-blue-600 text-white px-2.5 py-0.5 rounded-full">
-                  {totalEquiposTrabajador}{" "}
-                  {totalEquiposTrabajador === 1 ? "registrado" : "registrados"}
-                </span>
+            {/* Selector de cuántos dispositivos maneja este trabajador + Barra de progreso */}
+            <div className="bg-white rounded-xl p-3 border border-blue-200/80 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-bold text-slate-800">
+                    ¿Cuántos dispositivos maneja esta persona?
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Selecciona la cantidad total para ir registrándolos uno por
+                    uno:
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3, 4, 5].map((num) => {
+                    const active = metaDispositivos === num;
+                    return (
+                      <button
+                        key={num}
+                        type="button"
+                        onClick={() => setMetaDispositivos(num)}
+                        className={`w-7 h-7 rounded-lg text-xs font-bold transition ${
+                          active
+                            ? "bg-blue-600 text-white shadow-xs"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                      >
+                        {num}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => setMetaDispositivos((m) => m + 1)}
+                    className="px-2 h-7 rounded-lg text-xs font-bold bg-slate-100 text-blue-700 hover:bg-blue-100 transition"
+                    title="Más dispositivos"
+                  >
+                    +1
+                  </button>
+                </div>
+              </div>
+
+              {/* Barra de progreso visual de los dispositivos del trabajador */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px] font-semibold">
+                  <span className="text-blue-700">
+                    Progreso de registro de {selectedTrabajador.nombre.split(" ")[0]}:
+                  </span>
+                  <span className="font-mono font-bold text-slate-800">
+                    {totalEquiposTrabajador} de{" "}
+                    {Math.max(metaDispositivos, totalEquiposTrabajador)}{" "}
+                    equipos registrados
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-600 to-emerald-500 transition-all duration-300"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        Math.round(
+                          (totalEquiposTrabajador /
+                            Math.max(
+                              metaDispositivos,
+                              totalEquiposTrabajador,
+                              1
+                            )) *
+                            100
+                        )
+                      )}%`,
+                    }}
+                  />
+                </div>
               </div>
 
               {/* Desglose por tipo */}
@@ -614,29 +717,44 @@ export default function CapturaInventarioPage() {
                 </div>
               </div>
 
-              {/* Lista compacta de los equipos ya escaneados de este trabajador */}
+              {/* Lista de los múltiples dispositivos ya registrados a esta persona */}
               {dispositivosTrabajador.length > 0 && (
-                <div className="pt-1.5 border-t border-slate-100 space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Equipos ya registrados a {selectedTrabajador.nombre}:
+                <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    Equipos cargados a este trabajador ({dispositivosTrabajador.length}):
                   </p>
-                  <div className="space-y-1 max-h-28 overflow-y-auto">
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
                     {dispositivosTrabajador.map((d, idx) => (
                       <div
                         key={d.id}
-                        className="text-[11px] bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200/70 flex items-center justify-between gap-2"
+                        className="text-xs bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/80 flex items-center justify-between gap-2"
                       >
-                        <span className="font-semibold text-slate-800 truncate">
-                          {idx + 1}. [{d.tipoEquipo}]{" "}
-                          {d.marcaModelo || "Sin modelo"}
-                        </span>
-                        <span className="font-mono text-[10px] text-slate-500 shrink-0">
-                          {d.tipoEquipo === "Celular" && d.imei1
-                            ? `IMEI: ${d.imei1}`
-                            : d.serial
-                            ? `S/N: ${d.serial}`
-                            : d.macAddress || ""}
-                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold uppercase bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">
+                              #{dispositivosTrabajador.length - idx} • {d.tipoEquipo}
+                            </span>
+                            <span className="font-bold text-slate-800 truncate">
+                              {d.marcaModelo || "Sin modelo"}
+                            </span>
+                          </div>
+                          <p className="font-mono text-[10px] text-slate-500 truncate mt-0.5">
+                            {d.serial ? `S/N: ${d.serial} ` : ""}
+                            {d.tipoEquipo === "Celular" && d.imei1
+                              ? `• IMEI: ${d.imei1} `
+                              : ""}
+                            {d.macAddress ? `• MAC: ${d.macAddress}` : ""}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={deletingDeviceId === d.id}
+                          onClick={() => handleDeleteDispositivo(d.id)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition shrink-0"
+                          title="Eliminar este equipo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -647,17 +765,25 @@ export default function CapturaInventarioPage() {
         )}
       </section>
 
-      {/* PASO 2: Botón grande de Cámara Trasera + Compresión + Visión IA */}
-      <section className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80">
+      {/* PASO 2: Botón grande de Cámara Trasera para el Dispositivo Actual */}
+      <section
+        ref={formStepRef}
+        className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80"
+      >
         <div className="flex items-center justify-between mb-3">
           <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
             <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[11px]">
               2
             </span>
-            Escaneo Fotográfico con IA{" "}
-            {selectedTrabajador
-              ? `(Equipo #${totalEquiposTrabajador + 1})`
-              : ""}
+            {selectedTrabajador ? (
+              <span>
+                Capturar Dispositivo #{totalEquiposTrabajador + 1} de{" "}
+                {Math.max(metaDispositivos, totalEquiposTrabajador + 1)} (
+                {selectedTrabajador.nombre.split(" ")[0]})
+              </span>
+            ) : (
+              <span>Escaneo Fotográfico con IA</span>
+            )}
           </label>
           {imageMeta && (
             <span className="text-[11px] text-slate-500 font-mono">
@@ -701,6 +827,8 @@ export default function CapturaInventarioPage() {
               <span className="text-base font-bold tracking-tight">
                 {previewImage
                   ? "Tomar Otra Fotografía"
+                  : selectedTrabajador
+                  ? `Fotografiar Dispositivo #${totalEquiposTrabajador + 1}`
                   : "Abrir Cámara y Escanear Equipo"}
               </span>
               <span className="text-xs text-blue-100 text-center max-w-xs">
@@ -734,36 +862,55 @@ export default function CapturaInventarioPage() {
         )}
       </section>
 
-      {/* Alertas de estado (éxito, error o información IA) */}
+      {/* Alertas de estado y botones rápidos para flujo multi-dispositivo */}
       {statusMessage && (
         <div
-          className={`rounded-xl p-3.5 border text-xs font-medium flex items-start gap-2.5 ${
+          className={`rounded-xl p-3.5 border text-xs font-medium space-y-2.5 ${
             statusMessage.type === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+              ? "bg-emerald-50 border-emerald-200 text-emerald-950"
               : statusMessage.type === "error"
               ? "bg-rose-50 border-rose-200 text-rose-900"
               : "bg-blue-50 border-blue-200 text-blue-900"
           }`}
         >
-          {statusMessage.type === "success" ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-          ) : statusMessage.type === "error" ? (
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-          ) : (
-            <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-          )}
-          <div className="flex-1">
-            <p>{statusMessage.text}</p>
-            {statusMessage.type === "success" && (
+          <div className="flex items-start gap-2.5">
+            {statusMessage.type === "success" ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+            ) : statusMessage.type === "error" ? (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            ) : (
+              <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+            )}
+            <p className="flex-1">{statusMessage.text}</p>
+          </div>
+
+          {statusMessage.type === "success" && selectedTrabajador && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs shadow-xs transition"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Escanear Otro Equipo de{" "}
+                {selectedTrabajador.nombre.split(" ")[0]}
+              </button>
+              <button
+                type="button"
+                onClick={handleClearTrabajador}
+                className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-semibold px-3 py-2 rounded-xl text-xs transition"
+              >
+                <UserCheck2 className="w-3.5 h-3.5 text-blue-600" />
+                Pasar al Siguiente Trabajador
+              </button>
               <Link
                 href="/registros"
-                className="inline-flex items-center gap-1 mt-1.5 font-bold text-emerald-700 underline"
+                className="inline-flex items-center gap-1 font-bold text-emerald-800 underline px-2 py-1"
               >
-                Ver tabla general de equipos registrados{" "}
-                <ArrowRight className="w-3.5 h-3.5" />
+                Ver todos los registros <ArrowRight className="w-3.5 h-3.5" />
               </Link>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -792,7 +939,7 @@ export default function CapturaInventarioPage() {
         {/* Selector visual de Tipo de Equipo */}
         <div>
           <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-            Categoría del Dispositivo *
+            Categoría del Dispositivo #{totalEquiposTrabajador + 1} *
           </label>
           <div className="grid grid-cols-4 gap-2">
             {(
@@ -939,16 +1086,17 @@ export default function CapturaInventarioPage() {
           {savingDevice ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
-              <span>Guardando en Base de Datos...</span>
+              <span>Guardando Dispositivo...</span>
             </>
           ) : (
             <>
               <Save className="w-5 h-5" />
               <span>
-                Guardar {tipoEquipo}{" "}
                 {selectedTrabajador
-                  ? `de ${selectedTrabajador.nombre.split(" ")[0]}`
-                  : ""}
+                  ? `Guardar Dispositivo #${totalEquiposTrabajador + 1} (${tipoEquipo}) de ${
+                      selectedTrabajador.nombre.split(" ")[0]
+                    }`
+                  : `Guardar ${tipoEquipo}`}
               </span>
             </>
           )}

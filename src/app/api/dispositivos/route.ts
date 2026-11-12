@@ -278,3 +278,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id")?.trim();
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Falta el ID del dispositivo a eliminar." },
+        { status: 400 }
+      );
+    }
+
+    try {
+      if (!process.env.DATABASE_URL) {
+        throw new Error("Modo vista previa local");
+      }
+      await prisma.dispositivo.delete({ where: { id } });
+      return NextResponse.json({ ok: true });
+    } catch {
+      const idx = dispositivosFallback.findIndex((d) => d.id === id);
+      if (idx !== -1) {
+        dispositivosFallback.splice(idx, 1);
+      }
+      return NextResponse.json({ ok: true });
+    }
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Error al eliminar el dispositivo.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

@@ -14,6 +14,8 @@ import {
   Building2,
   Calendar,
   Layers,
+  Users,
+  List,
 } from "lucide-react";
 
 interface DispositivoConTrabajador {
@@ -44,6 +46,9 @@ export default function RegistrosPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState<string>("");
+  const [vistaModo, setVistaModo] = useState<"por-persona" | "por-equipo">(
+    "por-persona"
+  );
 
   const cargarRegistros = useCallback(async () => {
     try {
@@ -71,13 +76,37 @@ export default function RegistrosPage() {
     return () => clearTimeout(timer);
   }, [cargarRegistros]);
 
-  // Calcular cuántos dispositivos maneja cada trabajador
+  // Calcular cuántos dispositivos maneja cada trabajador y agruparlos por trabajador
   const conteoPorTrabajador = useMemo(() => {
     const map = new Map<string, number>();
     for (const d of dispositivos) {
       map.set(d.trabajador.id, (map.get(d.trabajador.id) || 0) + 1);
     }
     return map;
+  }, [dispositivos]);
+
+  const gruposPorTrabajador = useMemo(() => {
+    const grupos = new Map<
+      string,
+      {
+        trabajador: DispositivoConTrabajador["trabajador"];
+        equipos: DispositivoConTrabajador[];
+      }
+    >();
+
+    for (const d of dispositivos) {
+      const existing = grupos.get(d.trabajador.id);
+      if (existing) {
+        existing.equipos.push(d);
+      } else {
+        grupos.set(d.trabajador.id, {
+          trabajador: d.trabajador,
+          equipos: [d],
+        });
+      }
+    }
+
+    return Array.from(grupos.values());
   }, [dispositivos]);
 
   const getBadgeIcon = (tipo: string) => {
@@ -100,10 +129,13 @@ export default function RegistrosPage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-base font-bold text-slate-900">
-              Equipos Escaneados ({dispositivos.length})
+              Inventario General ({dispositivos.length} equipos en{" "}
+              {gruposPorTrabajador.length}{" "}
+              {gruposPorTrabajador.length === 1 ? "persona" : "personas"})
             </h2>
             <p className="text-xs text-slate-500">
-              Incluye conteo por trabajador, Serial, MAC, IMEI y especificaciones
+              Visualiza múltiples equipos agrupados por trabajador o por
+              dispositivo
             </p>
           </div>
           <button
@@ -113,6 +145,34 @@ export default function RegistrosPage() {
             title="Actualizar lista"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+
+        {/* Selector de modo de visualización: Agrupado por Persona vs Lista de Equipos */}
+        <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
+          <button
+            type="button"
+            onClick={() => setVistaModo("por-persona")}
+            className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+              vistaModo === "por-persona"
+                ? "bg-white text-blue-700 shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>Por Trabajador ({gruposPorTrabajador.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setVistaModo("por-equipo")}
+            className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+              vistaModo === "por-equipo"
+                ? "bg-white text-blue-700 shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <List className="w-3.5 h-3.5" />
+            <span>Por Dispositivo ({dispositivos.length})</span>
           </button>
         </div>
 
@@ -171,8 +231,8 @@ export default function RegistrosPage() {
         </div>
       </section>
 
-      {/* Listado de tarjetas de dispositivos registrados */}
-      <section className="space-y-2.5">
+      {/* CONTENIDO: Vista Agrupada por Trabajador (Múltiples Dispositivos por Persona) o Lista Individual */}
+      <section className="space-y-3">
         {loading ? (
           <div className="bg-white rounded-2xl p-8 text-center text-xs text-slate-500 border border-slate-200">
             Cargando registros de inventario...
@@ -181,6 +241,116 @@ export default function RegistrosPage() {
           <div className="bg-white rounded-2xl p-8 text-center text-xs text-slate-500 border border-slate-200">
             No hay equipos registrados que coincidan con el filtro actual.
           </div>
+        ) : vistaModo === "por-persona" ? (
+          gruposPorTrabajador.map(({ trabajador, equipos }) => (
+            <article
+              key={trabajador.id}
+              className="bg-white rounded-2xl p-4 shadow-xs border border-slate-200/90 space-y-3"
+            >
+              {/* Encabezado del Trabajador */}
+              <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <User className="w-4 h-4 text-blue-600 shrink-0" />
+                    <h3 className="text-sm font-bold text-slate-900">
+                      {trabajador.nombre}
+                    </h3>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    <span className="font-mono font-semibold text-slate-700">
+                      {trabajador.cedula}
+                    </span>{" "}
+                    • {trabajador.cargo} ({trabajador.empresa} /{" "}
+                    {trabajador.departamento})
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1 text-xs font-extrabold bg-blue-600 text-white px-2.5 py-1 rounded-full shrink-0">
+                  <Layers className="w-3.5 h-3.5" />
+                  {equipos.length}{" "}
+                  {equipos.length === 1 ? "Dispositivo" : "Dispositivos"}
+                </span>
+              </div>
+
+              {/* Lista de los múltiples dispositivos que maneja esta persona */}
+              <div className="space-y-2">
+                {equipos.map((d, index) => {
+                  const esCelular = d.tipoEquipo === "Celular";
+                  return (
+                    <div
+                      key={d.id}
+                      className="bg-slate-50 rounded-xl p-3 border border-slate-200/80 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md">
+                            {getBadgeIcon(d.tipoEquipo)}
+                            Equipo #{index + 1}: {d.tipoEquipo}
+                          </span>
+                          <span className="text-xs font-bold text-slate-900">
+                            {d.marcaModelo || "Sin modelo especificado"}
+                          </span>
+                        </div>
+                        {d.codigoInventario && (
+                          <span className="text-[10px] font-mono font-bold bg-white text-slate-700 px-2 py-0.5 rounded border border-slate-200">
+                            #{d.codigoInventario}
+                          </span>
+                        )}
+                      </div>
+
+                      {d.especificaciones && (
+                        <p className="text-[11px] text-slate-600 bg-white px-2.5 py-1 rounded border border-slate-200/60">
+                          {d.especificaciones}
+                        </p>
+                      )}
+
+                      <div
+                        className={`grid grid-cols-1 ${
+                          esCelular ? "sm:grid-cols-4" : "sm:grid-cols-2"
+                        } gap-1.5 text-[11px] font-mono pt-0.5`}
+                      >
+                        <div>
+                          <span className="text-[10px] text-slate-400 font-sans font-semibold">
+                            S/N:{" "}
+                          </span>
+                          <span className="text-slate-800 font-semibold">
+                            {d.serial || "—"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 font-sans font-semibold">
+                            MAC:{" "}
+                          </span>
+                          <span className="text-slate-800 font-semibold">
+                            {d.macAddress || "—"}
+                          </span>
+                        </div>
+                        {esCelular && (
+                          <>
+                            <div>
+                              <span className="text-[10px] text-slate-400 font-sans font-semibold">
+                                IMEI 1:{" "}
+                              </span>
+                              <span className="text-slate-800 font-semibold">
+                                {d.imei1 || "—"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 font-sans font-semibold">
+                                IMEI 2:{" "}
+                              </span>
+                              <span className="text-slate-800 font-semibold">
+                                {d.imei2 || "—"}
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+          ))
         ) : (
           dispositivos.map((d) => {
             const totalDeEsteTrabajador =
@@ -209,14 +379,12 @@ export default function RegistrosPage() {
                   )}
                 </div>
 
-                {/* Especificaciones particulares si existen */}
                 {d.especificaciones && (
                   <p className="text-xs text-slate-600 bg-indigo-50/50 border border-indigo-100 px-3 py-1.5 rounded-lg">
                     {d.especificaciones}
                   </p>
                 )}
 
-                {/* Identificadores Técnicos adaptados al Tipo de Equipo */}
                 <div
                   className={`grid grid-cols-1 ${
                     esCelular ? "sm:grid-cols-4" : "sm:grid-cols-2"
@@ -260,7 +428,6 @@ export default function RegistrosPage() {
                   )}
                 </div>
 
-                {/* Datos del trabajador responsable y total de equipos que maneja */}
                 <div className="pt-1.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
                   <div className="flex flex-wrap items-center gap-1.5 font-medium text-slate-800">
                     <User className="w-3.5 h-3.5 text-blue-600" />
