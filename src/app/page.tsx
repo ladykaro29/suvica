@@ -27,6 +27,7 @@ import {
   Plus,
   Trash2,
   Pencil,
+  Images,
   UserCheck2,
 } from "lucide-react";
 import { compressImageClient } from "@/lib/image-compression";
@@ -84,14 +85,18 @@ export default function CapturaInventarioPage() {
   });
   const [savingWorker, setSavingWorker] = useState(false);
 
-  // Estado de captura fotográfica y análisis IA
+  // Estado de captura fotográfica múltiple y análisis IA
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [imageMeta, setImageMeta] = useState<{
-    width: number;
-    height: number;
-    sizeKB: number;
-  } | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const [devicePhotos, setDevicePhotos] = useState<
+    Array<{
+      id: string;
+      dataUrl: string;
+      width: number;
+      height: number;
+      sizeKB: number;
+    }>
+  >([]);
   const [analyzing, setAnalyzing] = useState(false);
 
   // Estado del formulario de dispositivo (adaptable por tipo y propiedad)
@@ -235,40 +240,38 @@ export default function CapturaInventarioPage() {
     }
   };
 
-  // Manejar captura de cámara, compresión cliente a máx 1200px JPEG 0.8 y envío a Gemini
-  const handleCapturePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  // Enviar todas las fotos acumuladas del dispositivo actual a Gemini IA para reconocimiento combinado
+  const analyzePhotosList = async (
+    photosList: Array<{
+      id: string;
+      dataUrl: string;
+      width: number;
+      height: number;
+      sizeKB: number;
+    }>
+  ) => {
+    if (photosList.length === 0) return;
     setStatusMessage(null);
     setAnalyzing(true);
 
     try {
-      // 1. Comprimir en el cliente a máx 1200px con JPEG 0.8
-      const compressed = await compressImageClient(file, 1200, 0.8);
-      setPreviewImage(compressed.dataUrl);
-      setImageMeta({
-        width: compressed.width,
-        height: compressed.height,
-        sizeKB: compressed.sizeKB,
-      });
-
-      // 2. Enviar imagen base64 a /api/analizar-foto
       const response = await fetch("/api/analizar-foto", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: compressed.dataUrl }),
+        body: JSON.stringify({
+          images: photosList.map((p) => p.dataUrl),
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          data.error || "No se pudo analizar la fotografía con IA."
+          data.error || "No se pudieron analizar las fotografías con IA."
         );
       }
 
-      // 3. Rellenar formulario adaptando los campos al tipo de equipo detectado
+      // Rellenar/fusionar el formulario conservando valores previos si la nueva foto no los incluye
       const detectedType: TipoEquipo =
         data.tipoEquipo &&
         ["Laptop", "Celular", "Radio", "Otro"].includes(data.tipoEquipo)
@@ -276,14 +279,14 @@ export default function CapturaInventarioPage() {
           : tipoEquipo;
 
       setTipoEquipo(detectedType);
-      setMarcaModelo(data.marcaModelo ?? "");
-      setSerial(data.serial ?? "");
-      setEspecificaciones(data.especificaciones ?? "");
-      setMacAddress(data.macAddress ?? "");
+      if (data.marcaModelo) setMarcaModelo(data.marcaModelo);
+      if (data.serial) setSerial(data.serial);
+      if (data.especificaciones) setEspecificaciones(data.especificaciones);
+      if (data.macAddress) setMacAddress(data.macAddress);
 
       if (detectedType === "Celular") {
-        setImei1(data.imei1 ?? "");
-        setImei2(data.imei2 ?? "");
+        if (data.imei1) setImei1(data.imei1);
+        if (data.imei2) setImei2(data.imei2);
       } else {
         setImei1("");
         setImei2("");
@@ -295,31 +298,82 @@ export default function CapturaInventarioPage() {
 
       setStatusMessage({
         type: "info",
-        text: `IA detectó: ${detectedType}${
+        text: `IA analizó ${photosList.length} ${
+          photosList.length === 1 ? "fotografía" : "fotografías combinadas"
+        } y detectó: ${detectedType}${
           data.marcaModelo ? ` (${data.marcaModelo})` : ""
-        }. Verifica los datos abajo y presiona Guardar para sumarlo al trabajador.`,
+        }. Puedes subir otra foto más (ej. MAC o etiqueta) para completar datos o presionar Guardar.`,
       });
     } catch (err: unknown) {
       const msg =
         err instanceof Error
           ? err.message
-          : "Ocurrió un error al procesar la fotografía.";
+          : "Ocurrió un error al procesar las fotografías.";
       setStatusMessage({
         type: "error",
         text: msg,
       });
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  // Manejar captura de cámara o subida múltiple desde galería, compresión cliente a máx 1200px JPEG 0.8 y envío a Gemini
+  const handleCapturePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length === 0) return;
+
+    setStatusMessage(null);
+    setAnalyzing(true);
+
+    try {
+      // 1. Comprimir todas las fotos seleccionadas en el cliente (máx 1200px, JPEG 0.8)
+      const compressedList = await Promise.all(
+        files.slice(0, 8).map(async (file, idx) => {
+          const compressed = await compressImageClient(file, 1200, 0.8);
+          return {
+            id: `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+            dataUrl: compressed.dataUrl,
+            width: compressed.width,
+            height: compressed.height,
+            sizeKB: compressed.sizeKB,
+          };
+        })
+      );
+
+      // 2. Acumular con las fotos que ya tenía cargadas este dispositivo (máximo 8 fotos por equipo)
+      const updatedPhotos = [...devicePhotos, ...compressedList].slice(0, 8);
+      setDevicePhotos(updatedPhotos);
+
+      // 3. Analizar todas las fotos juntas con Gemini IA
+      await analyzePhotosList(updatedPhotos);
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Ocurrió un error al comprimir o procesar las fotografías.";
+      setStatusMessage({
+        type: "error",
+        text: msg,
+      });
+      setAnalyzing(false);
+    } finally {
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
+      }
+      if (galleryInputRef.current) {
+        galleryInputRef.current.value = "";
       }
     }
   };
 
+  const handleRemovePhoto = (photoId: string) => {
+    setDevicePhotos((prev) => prev.filter((p) => p.id !== photoId));
+  };
+
   const resetDeviceForm = () => {
     setEditingDeviceId(null);
-    setPreviewImage(null);
-    setImageMeta(null);
+    setDevicePhotos([]);
     setCodigoInventario("");
     setMarcaModelo("");
     setSerial("");
@@ -841,7 +895,7 @@ export default function CapturaInventarioPage() {
         )}
       </section>
 
-      {/* PASO 2: Botón grande de Cámara Trasera para el Dispositivo Actual */}
+      {/* PASO 2: Captura de Cámara o Subida de Varias Fotos para el Dispositivo Actual */}
       <section
         ref={formStepRef}
         className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80"
@@ -853,17 +907,18 @@ export default function CapturaInventarioPage() {
             </span>
             {selectedTrabajador ? (
               <span>
-                Capturar Dispositivo #{totalEquiposTrabajador + 1} de{" "}
+                Fotos del Dispositivo #{totalEquiposTrabajador + 1} de{" "}
                 {Math.max(metaDispositivos, totalEquiposTrabajador + 1)} (
                 {selectedTrabajador.nombre.split(" ")[0]})
               </span>
             ) : (
-              <span>Escaneo Fotográfico con IA</span>
+              <span>Escaneo Multi-Foto con IA</span>
             )}
           </label>
-          {imageMeta && (
-            <span className="text-[11px] text-slate-500 font-mono">
-              {imageMeta.width}x{imageMeta.height}px • {imageMeta.sizeKB}KB
+          {devicePhotos.length > 0 && (
+            <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+              {devicePhotos.length}{" "}
+              {devicePhotos.length === 1 ? "foto cargada" : "fotos cargadas"}
             </span>
           )}
         </div>
@@ -878,61 +933,124 @@ export default function CapturaInventarioPage() {
           className="hidden"
         />
 
-        <button
-          type="button"
-          disabled={analyzing}
-          onClick={() => fileInputRef.current?.click()}
-          className="w-full py-5 px-4 rounded-2xl bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 hover:from-blue-700 hover:to-indigo-900 active:scale-[0.99] text-white shadow-lg shadow-blue-600/25 transition flex flex-col items-center justify-center gap-2 disabled:opacity-60"
-        >
-          {analyzing ? (
-            <>
-              <Loader2 className="w-9 h-9 animate-spin text-blue-200" />
-              <span className="text-base font-bold">
-                Analizando fotografía con Gemini IA...
-              </span>
-              <span className="text-xs text-blue-200 text-center">
-                Detectando tipo de equipo, Marca, Modelo, Serial, MAC, IMEI y
-                especificaciones
-              </span>
-            </>
-          ) : (
-            <>
-              <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-sm">
-                <Camera className="w-8 h-8 text-white" />
-              </div>
-              <span className="text-base font-bold tracking-tight">
-                {previewImage
-                  ? "Tomar Otra Fotografía"
-                  : selectedTrabajador
-                  ? `Fotografiar Dispositivo #${totalEquiposTrabajador + 1}`
-                  : "Abrir Cámara y Escanear Equipo"}
-              </span>
-              <span className="text-xs text-blue-100 text-center max-w-xs">
-                Fotografía la etiqueta de la Laptop, Radio o pantalla *#06# del
-                Celular. La IA adaptará los campos automáticamente.
-              </span>
-            </>
-          )}
-        </button>
+        {/* Input oculto para subir múltiples fotos a la vez desde galería o archivos */}
+        <input
+          ref={galleryInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={handleCapturePhoto}
+          className="hidden"
+        />
 
-        {/* Previsualización miniatura si se tomó foto */}
-        {previewImage && (
-          <div className="mt-3 flex items-center gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={previewImage}
-              alt="Vista previa del equipo"
-              className="w-16 h-16 object-cover rounded-lg border border-slate-300 shrink-0"
-            />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Imagen optimizada en cliente (JPEG 80%)</span>
+        <div className="space-y-2.5">
+          {/* Botón Principal: Tomar Foto con Cámara */}
+          <button
+            type="button"
+            disabled={analyzing}
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full py-4 px-4 rounded-2xl bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 hover:from-blue-700 hover:to-indigo-900 active:scale-[0.99] text-white shadow-lg shadow-blue-600/25 transition flex flex-col items-center justify-center gap-1.5 disabled:opacity-60"
+          >
+            {analyzing ? (
+              <>
+                <Loader2 className="w-8 h-8 animate-spin text-blue-200" />
+                <span className="text-sm font-bold">
+                  Analizando {devicePhotos.length > 1 ? `${devicePhotos.length} fotografías` : "fotografía"} con Gemini IA...
+                </span>
+                <span className="text-xs text-blue-200 text-center">
+                  Combinando Marca, Modelo, Serial, MAC, IMEI y especificaciones de todas las fotos
+                </span>
+              </>
+            ) : (
+              <>
+                <div className="bg-white/20 p-2.5 rounded-2xl backdrop-blur-sm">
+                  <Camera className="w-7 h-7 text-white" />
+                </div>
+                <span className="text-base font-bold tracking-tight">
+                  {devicePhotos.length > 0
+                    ? `+ Tomar Foto #${devicePhotos.length + 1} de este Equipo`
+                    : selectedTrabajador
+                    ? `Tomar Foto con Cámara (Dispositivo #${totalEquiposTrabajador + 1})`
+                    : "Abrir Cámara y Fotografiar Equipo"}
+                </span>
+                <span className="text-xs text-blue-100 text-center max-w-xs">
+                  Puedes tomar varias fotos del mismo equipo (ej. Foto 1: *#06# IMEI, Foto 2: Dirección MAC, Foto 3: Etiqueta S/N).
+                </span>
+              </>
+            )}
+          </button>
+
+          {/* Botón Secundario: Subir Varias Fotos desde Galería / Archivos */}
+          <button
+            type="button"
+            disabled={analyzing}
+            onClick={() => galleryInputRef.current?.click()}
+            className="w-full py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-800 border border-slate-300/80 font-bold text-xs transition flex items-center justify-center gap-2 disabled:opacity-60"
+          >
+            <Images className="w-4 h-4 text-blue-600" />
+            <span>
+              {devicePhotos.length > 0
+                ? "Agregar más fotos desde Galería / Archivos"
+                : "Subir Varias Fotos a la Vez (Galería / Archivos)"}
+            </span>
+          </button>
+        </div>
+
+        {/* Galería de miniaturas de las fotos cargadas para el dispositivo actual */}
+        {devicePhotos.length > 0 && (
+          <div className="mt-3 bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                <span>
+                  Fotos del equipo actual ({devicePhotos.length}):
+                </span>
               </div>
-              <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                Resolución enviada: {imageMeta?.width}×{imageMeta?.height}px (
-                {imageMeta?.sizeKB} KB)
-              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={analyzing}
+                  onClick={() => analyzePhotosList(devicePhotos)}
+                  className="text-[11px] font-bold text-blue-700 hover:text-blue-900 underline disabled:opacity-50"
+                >
+                  Re-analizar juntas
+                </button>
+                <button
+                  type="button"
+                  disabled={analyzing}
+                  onClick={() => setDevicePhotos([])}
+                  className="text-[11px] font-semibold text-rose-600 hover:text-rose-800"
+                >
+                  Borrar fotos
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {devicePhotos.map((photo, index) => (
+                <div
+                  key={photo.id}
+                  className="relative group rounded-lg overflow-hidden border border-slate-300 bg-white"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={photo.dataUrl}
+                    alt={`Foto ${index + 1}`}
+                    className="w-full h-20 object-cover"
+                  />
+                  <span className="absolute bottom-1 left-1 bg-slate-900/75 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                    Foto #{index + 1} ({photo.sizeKB}KB)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePhoto(photo.id)}
+                    className="absolute top-1 right-1 bg-rose-600 text-white rounded-full p-0.5 shadow-sm hover:bg-rose-700"
+                    title="Quitar esta foto"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}
