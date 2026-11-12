@@ -1,9 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
+  NOMINA_OFICIAL_SUVICA,
   trabajadoresFallback,
   dispositivosFallback,
 } from "@/lib/fallback-store";
+
+const CEDULAS_DEMO_ANTERIORES = [
+  "V-15234890",
+  "V-18902341",
+  "V-20456123",
+  "V-14789652",
+  "V-22310987",
+  "V-16543219",
+  "V-19876543",
+  "V-24112233",
+];
+
+let nominaSincronizadaEnProceso = false;
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -14,14 +28,30 @@ export async function GET(req: NextRequest) {
       throw new Error("DATABASE_URL no configurada (modo vista previa local)");
     }
 
-    // Si la tabla Trabajador está vacía en el primer arranque en producción, poblarla automáticamente
-    if (!q) {
+    // Sincronizar automáticamente toda la nómina real de los 4 PDFs en PostgreSQL
+    if (!nominaSincronizadaEnProceso) {
       const count = await prisma.trabajador.count();
-      if (count === 0) {
-        for (const t of trabajadoresFallback) {
+      if (count < NOMINA_OFICIAL_SUVICA.length) {
+        nominaSincronizadaEnProceso = true;
+        // Limpiar los 8 trabajadores de ejemplo iniciales si no tienen equipos asociados
+        await prisma.trabajador
+          .deleteMany({
+            where: {
+              cedula: { in: CEDULAS_DEMO_ANTERIORES },
+              dispositivos: { none: {} },
+            },
+          })
+          .catch(() => {});
+
+        for (const t of NOMINA_OFICIAL_SUVICA) {
           await prisma.trabajador.upsert({
             where: { cedula: t.cedula },
-            update: {},
+            update: {
+              nombre: t.nombre,
+              cargo: t.cargo,
+              departamento: t.departamento,
+              empresa: t.empresa,
+            },
             create: {
               cedula: t.cedula,
               nombre: t.nombre,
@@ -31,15 +61,20 @@ export async function GET(req: NextRequest) {
             },
           });
         }
+      } else {
+        nominaSincronizadaEnProceso = true;
       }
     }
+
+    const cleanDigits = q ? q.replace(/[\.\s]/g, "") : "";
 
     const trabajadores = await prisma.trabajador.findMany({
       where: q
         ? {
             OR: [
               { nombre: { contains: q, mode: "insensitive" } },
-              { cedula: { contains: q, mode: "insensitive" } },
+              { cedula: { contains: cleanDigits, mode: "insensitive" } },
+              { cargo: { contains: q, mode: "insensitive" } },
               { departamento: { contains: q, mode: "insensitive" } },
               { empresa: { contains: q, mode: "insensitive" } },
             ],
@@ -56,18 +91,20 @@ export async function GET(req: NextRequest) {
       orderBy: {
         nombre: "asc",
       },
-      take: 100,
+      take: 300,
     });
 
     return NextResponse.json({ trabajadores });
   } catch {
     // Fallback local en memoria enriquecido con los dispositivos que maneja cada trabajador
+    const cleanQ = q ? q.toLowerCase().replace(/[\.\s]/g, "") : "";
     const filtrados = (
       q
         ? trabajadoresFallback.filter(
             (t) =>
               t.nombre.toLowerCase().includes(q.toLowerCase()) ||
-              t.cedula.toLowerCase().includes(q.toLowerCase()) ||
+              t.cedula.toLowerCase().replace(/[\.\s]/g, "").includes(cleanQ) ||
+              t.cargo.toLowerCase().includes(q.toLowerCase()) ||
               t.departamento.toLowerCase().includes(q.toLowerCase()) ||
               t.empresa.toLowerCase().includes(q.toLowerCase())
           )
@@ -104,25 +141,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const cedulaNormalizada = cedula
+      .trim()
+      .toUpperCase()
+      .replace(/\./g, "");
+
     try {
       if (!process.env.DATABASE_URL) {
         throw new Error("Modo vista previa local");
       }
 
       const trabajador = await prisma.trabajador.upsert({
-        where: { cedula: cedula.trim().toUpperCase() },
+        where: { cedula: cedulaNormalizada },
         update: {
-          nombre: nombre.trim(),
-          cargo: cargo?.trim() || "Trabajador",
-          departamento: departamento.trim(),
-          empresa: empresa.trim(),
+          nombre: nombre.trim().toUpperCase(),
+          cargo: cargo?.trim().toUpperCase() || "TRABAJADOR",
+          departamento: departamento.trim().toUpperCase(),
+          empresa: empresa.trim().toUpperCase(),
         },
         create: {
-          cedula: cedula.trim().toUpperCase(),
-          nombre: nombre.trim(),
-          cargo: cargo?.trim() || "Trabajador",
-          departamento: departamento.trim(),
-          empresa: empresa.trim(),
+          cedula: cedulaNormalizada,
+          nombre: nombre.trim().toUpperCase(),
+          cargo: cargo?.trim().toUpperCase() || "TRABAJADOR",
+          departamento: departamento.trim().toUpperCase(),
+          empresa: empresa.trim().toUpperCase(),
         },
         include: {
           dispositivos: true,
@@ -135,12 +177,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(trabajador, { status: 201 });
     } catch {
       const nuevo = {
-        id: `demo-${Date.now()}`,
-        cedula: cedula.trim().toUpperCase(),
-        nombre: nombre.trim(),
-        cargo: cargo?.trim() || "Trabajador",
-        departamento: departamento.trim(),
-        empresa: empresa.trim(),
+        id: `emp-${Date.now()}`,
+        cedula: cedulaNormalizada,
+        nombre: nombre.trim().toUpperCase(),
+        cargo: cargo?.trim().toUpperCase() || "TRABAJADOR",
+        departamento: departamento.trim().toUpperCase(),
+        empresa: empresa.trim().toUpperCase(),
         dispositivos: [],
         _count: { dispositivos: 0 },
       };

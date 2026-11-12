@@ -139,19 +139,24 @@ export default function CapturaInventarioPage() {
     fetchTrabajadores();
   }, []);
 
-  // Filtrado instantáneo por nombre, cédula, empresa o departamento
+  // Filtrado instantáneo por nombre, cédula (con o sin puntos), cargo, empresa o departamento
   const filteredTrabajadores = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return trabajadores.slice(0, 15);
+    if (!q) return trabajadores.slice(0, 40);
+    const cleanQ = q.replace(/[\.\-\s]/g, "");
     return trabajadores
-      .filter(
-        (t) =>
+      .filter((t) => {
+        const cleanCedula = t.cedula.toLowerCase().replace(/[\.\-\s]/g, "");
+        return (
           t.nombre.toLowerCase().includes(q) ||
           t.cedula.toLowerCase().includes(q) ||
+          (cleanQ.length >= 2 && cleanCedula.includes(cleanQ)) ||
+          t.cargo.toLowerCase().includes(q) ||
           t.departamento.toLowerCase().includes(q) ||
           t.empresa.toLowerCase().includes(q)
-      )
-      .slice(0, 15);
+        );
+      })
+      .slice(0, 40);
   }, [trabajadores, searchQuery]);
 
   const handleSelectTrabajador = (t: Trabajador) => {
