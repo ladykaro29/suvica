@@ -22,7 +22,12 @@ import {
   Save,
   Loader2,
   UserCheck,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  PenTool,
 } from "lucide-react";
+import { SignaturePad } from "@/components/SignaturePad";
 
 type TipoEquipo = "Laptop" | "Celular" | "Radio" | "Otro";
 type PropiedadEquipo = "Corporativo" | "Personal";
@@ -38,6 +43,7 @@ interface DispositivoConTrabajador {
   macAddress: string | null;
   imei1: string | null;
   imei2: string | null;
+  firmaConformidad?: string | null;
   createdAt: string;
   trabajador: {
     id: string;
@@ -61,6 +67,11 @@ export default function RegistrosPage() {
     "por-persona"
   );
 
+  // Estado de empleados desplegados (acordeón: por defecto cerrados para ver solo el nombre)
+  const [expandedWorkers, setExpandedWorkers] = useState<
+    Record<string, boolean>
+  >({});
+
   // Estado para edición y eliminación de registros guardados
   const [editingDevice, setEditingDevice] =
     useState<DispositivoConTrabajador | null>(null);
@@ -74,6 +85,8 @@ export default function RegistrosPage() {
     macAddress: "",
     imei1: "",
     imei2: "",
+    firmaConformidad: null as string | null,
+    aplicarFirmaATodos: true,
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -121,6 +134,13 @@ export default function RegistrosPage() {
     });
   }, [todosDispositivos, q, tipoFiltro, propiedadFiltro]);
 
+  const toggleWorkerExpand = (trabajadorId: string) => {
+    setExpandedWorkers((prev) => ({
+      ...prev,
+      [trabajadorId]: !prev[trabajadorId],
+    }));
+  };
+
   // Abrir modal de edición con los datos actuales del dispositivo
   const handleOpenEdit = (d: DispositivoConTrabajador) => {
     setEditingDevice(d);
@@ -134,6 +154,8 @@ export default function RegistrosPage() {
       macAddress: d.macAddress ?? "",
       imei1: d.imei1 ?? "",
       imei2: d.imei2 ?? "",
+      firmaConformidad: d.firmaConformidad ?? null,
+      aplicarFirmaATodos: true,
     });
   };
 
@@ -158,6 +180,8 @@ export default function RegistrosPage() {
           macAddress: editForm.macAddress,
           imei1: editForm.tipoEquipo === "Celular" ? editForm.imei1 : null,
           imei2: editForm.tipoEquipo === "Celular" ? editForm.imei2 : null,
+          firmaConformidad: editForm.firmaConformidad,
+          aplicarFirmaATodos: editForm.aplicarFirmaATodos,
         }),
       });
       const data = await res.json();
@@ -165,7 +189,17 @@ export default function RegistrosPage() {
         throw new Error(data.error || "No se pudo actualizar el registro.");
       }
       setTodosDispositivos((prev) =>
-        prev.map((item) => (item.id === editingDevice.id ? data : item))
+        prev.map((item) => {
+          if (item.id === editingDevice.id) return data;
+          if (
+            editForm.firmaConformidad &&
+            editForm.aplicarFirmaATodos &&
+            item.trabajador.id === editingDevice.trabajador.id
+          ) {
+            return { ...item, firmaConformidad: editForm.firmaConformidad };
+          }
+          return item;
+        })
       );
       setEditingDevice(null);
     } catch (error: unknown) {
@@ -258,11 +292,11 @@ export default function RegistrosPage() {
             <h2 className="text-base font-bold text-slate-900">
               Inventario General ({dispositivos.length} equipos en{" "}
               {gruposPorTrabajador.length}{" "}
-              {gruposPorTrabajador.length === 1 ? "persona" : "personas"})
+              {gruposPorTrabajador.length === 1 ? "empleado" : "empleados"})
             </h2>
             <p className="text-xs text-slate-500">
-              Visualiza, edita o exporta los equipos registrados por trabajador
-              o por dispositivo
+              Toca el nombre de un empleado para desplegar sus dispositivos y
+              firma
             </p>
           </div>
           <button
@@ -287,7 +321,7 @@ export default function RegistrosPage() {
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>Por Trabajador ({gruposPorTrabajador.length})</span>
+            <span>Por Empleado ({gruposPorTrabajador.length})</span>
           </button>
           <button
             type="button"
@@ -332,7 +366,7 @@ export default function RegistrosPage() {
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Filtrar por trabajador, cédula, serial, MAC, IMEI o modelo..."
+            placeholder="Filtrar por empleado, cédula, serial, MAC, IMEI o modelo..."
             className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-xs font-medium focus:bg-white focus:border-blue-600 outline-none"
           />
         </div>
@@ -385,8 +419,8 @@ export default function RegistrosPage() {
         </div>
       </section>
 
-      {/* CONTENIDO: Vista Agrupada por Trabajador o Lista Individual */}
-      <section className="space-y-3">
+      {/* CONTENIDO: Vista Agrupada y Desplegable por Empleado o Lista Individual */}
+      <section className="space-y-2.5">
         {loading ? (
           <div className="bg-white rounded-2xl p-8 text-center text-xs text-slate-500 border border-slate-200">
             Cargando registros de inventario...
@@ -396,146 +430,221 @@ export default function RegistrosPage() {
             No hay equipos registrados que coincidan con el filtro actual.
           </div>
         ) : vistaModo === "por-persona" ? (
-          gruposPorTrabajador.map(({ trabajador, equipos }) => (
-            <article
-              key={trabajador.id}
-              className="bg-white rounded-2xl p-4 shadow-xs border border-slate-200/90 space-y-3"
-            >
-              {/* Encabezado del Trabajador */}
-              <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <User className="w-4 h-4 text-blue-600 shrink-0" />
-                    <h3 className="text-sm font-bold text-slate-900">
-                      {trabajador.nombre}
-                    </h3>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    <span className="font-mono font-semibold text-slate-700">
-                      {trabajador.cedula}
-                    </span>{" "}
-                    • {trabajador.cargo} ({trabajador.empresa} /{" "}
-                    {trabajador.departamento})
-                  </p>
-                </div>
-                <span className="inline-flex items-center gap-1 text-xs font-extrabold bg-blue-600 text-white px-2.5 py-1 rounded-full shrink-0">
-                  <Layers className="w-3.5 h-3.5" />
-                  {equipos.length}{" "}
-                  {equipos.length === 1 ? "Dispositivo" : "Dispositivos"}
-                </span>
-              </div>
+          gruposPorTrabajador.map(({ trabajador, equipos }) => {
+            const isExpanded = Boolean(expandedWorkers[trabajador.id]);
+            const firmaEmpleado =
+              equipos.find((e) => Boolean(e.firmaConformidad))
+                ?.firmaConformidad ?? null;
 
-              {/* Lista de los múltiples dispositivos que maneja esta persona */}
-              <div className="space-y-2">
-                {equipos.map((d, index) => {
-                  const esCelular = d.tipoEquipo === "Celular";
-                  return (
-                    <div
-                      key={d.id}
-                      className="bg-slate-50 rounded-xl p-3 border border-slate-200/80 space-y-2"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md">
-                            {getBadgeIcon(d.tipoEquipo)}
-                            Equipo #{index + 1}: {d.tipoEquipo}
-                          </span>
-                          <span
-                            className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-md border ${
-                              d.propiedad === "Personal"
-                                ? "bg-amber-100 text-amber-800 border-amber-200"
-                                : "bg-emerald-100 text-emerald-800 border-emerald-200"
-                            }`}
-                          >
-                            {d.propiedad || "Corporativo"}
-                          </span>
-                          <span className="text-xs font-bold text-slate-900">
-                            {d.marcaModelo || "Sin modelo especificado"}
-                          </span>
-                          {d.codigoInventario && (
-                            <span className="text-[10px] font-mono font-bold bg-white text-slate-700 px-2 py-0.5 rounded border border-slate-200">
-                              #{d.codigoInventario}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Botones de Editar y Eliminar */}
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEdit(d)}
-                            className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-xs transition"
-                            title="Editar este registro"
-                          >
-                            <Pencil className="w-3 h-3" />
-                            <span>Editar</span>
-                          </button>
-                          <button
-                            type="button"
-                            disabled={deletingId === d.id}
-                            onClick={() => handleDeleteDevice(d)}
-                            className="p-1.5 rounded-lg bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 transition"
-                            title="Eliminar este registro"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {d.especificaciones && (
-                        <p className="text-[11px] text-slate-600 bg-white px-2.5 py-1 rounded border border-slate-200/60">
-                          {d.especificaciones}
-                        </p>
+            return (
+              <article
+                key={trabajador.id}
+                className="bg-white rounded-2xl shadow-xs border border-slate-200/90 overflow-hidden transition"
+              >
+                {/* Cabecera Desplegable: Muestra el Nombre del Empleado y Cantidad de Equipos */}
+                <button
+                  type="button"
+                  onClick={() => toggleWorkerExpand(trabajador.id)}
+                  className="w-full text-left px-4 py-3.5 hover:bg-slate-50 active:bg-slate-100 transition flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <User className="w-4 h-4 text-blue-600 shrink-0" />
+                      <h3 className="text-sm font-bold text-slate-900 truncate">
+                        {trabajador.nombre}
+                      </h3>
+                      {firmaEmpleado ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Firmado
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">
+                          Sin firma
+                        </span>
                       )}
-
-                      <div
-                        className={`grid grid-cols-1 ${
-                          esCelular ? "sm:grid-cols-4" : "sm:grid-cols-2"
-                        } gap-1.5 text-[11px] font-mono pt-0.5`}
-                      >
-                        <div>
-                          <span className="text-[10px] text-slate-400 font-sans font-semibold">
-                            S/N:{" "}
-                          </span>
-                          <span className="text-slate-800 font-semibold">
-                            {d.serial || "—"}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-slate-400 font-sans font-semibold">
-                            MAC:{" "}
-                          </span>
-                          <span className="text-slate-800 font-semibold">
-                            {d.macAddress || "—"}
-                          </span>
-                        </div>
-                        {esCelular && (
-                          <>
-                            <div>
-                              <span className="text-[10px] text-slate-400 font-sans font-semibold">
-                                IMEI 1:{" "}
-                              </span>
-                              <span className="text-slate-800 font-semibold">
-                                {d.imei1 || "—"}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-[10px] text-slate-400 font-sans font-semibold">
-                                IMEI 2:{" "}
-                              </span>
-                              <span className="text-slate-800 font-semibold">
-                                {d.imei2 || "—"}
-                              </span>
-                            </div>
-                          </>
-                        )}
-                      </div>
                     </div>
-                  );
-                })}
-              </div>
-            </article>
-          ))
+                    <p className="text-xs text-slate-500 mt-0.5 truncate">
+                      <span className="font-mono font-semibold text-slate-700">
+                        {trabajador.cedula}
+                      </span>{" "}
+                      • {trabajador.cargo} ({trabajador.empresa})
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="inline-flex items-center gap-1 text-xs font-extrabold bg-blue-600 text-white px-2.5 py-1 rounded-full">
+                      <Layers className="w-3.5 h-3.5" />
+                      {equipos.length}
+                    </span>
+                    <div className="p-1 rounded-lg bg-slate-100 text-slate-600">
+                      {isExpanded ? (
+                        <ChevronUp className="w-4 h-4" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4" />
+                      )}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Contenido Desplegable al hacer clic en el empleado */}
+                {isExpanded && (
+                  <div className="px-4 pb-4 pt-2 border-t border-slate-100 space-y-3 bg-slate-50/40">
+                    <div className="space-y-2">
+                      {equipos.map((d, index) => {
+                        const esCelular = d.tipoEquipo === "Celular";
+                        return (
+                          <div
+                            key={d.id}
+                            className="bg-white rounded-xl p-3 border border-slate-200/90 space-y-2 shadow-2xs"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md">
+                                  {getBadgeIcon(d.tipoEquipo)}
+                                  Equipo #{index + 1}: {d.tipoEquipo}
+                                </span>
+                                <span
+                                  className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-md border ${
+                                    d.propiedad === "Personal"
+                                      ? "bg-amber-100 text-amber-800 border-amber-200"
+                                      : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                  }`}
+                                >
+                                  {d.propiedad || "Corporativo"}
+                                </span>
+                                <span className="text-xs font-bold text-slate-900">
+                                  {d.marcaModelo || "Sin modelo especificado"}
+                                </span>
+                                {d.codigoInventario && (
+                                  <span className="text-[10px] font-mono font-bold bg-slate-50 text-slate-700 px-2 py-0.5 rounded border border-slate-200">
+                                    #{d.codigoInventario}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Botones de Editar y Eliminar */}
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEdit(d)}
+                                  className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-xs transition"
+                                  title="Editar o firmar este registro"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                  <span>Editar</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={deletingId === d.id}
+                                  onClick={() => handleDeleteDevice(d)}
+                                  className="p-1.5 rounded-lg bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 transition"
+                                  title="Eliminar este registro"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {d.especificaciones && (
+                              <p className="text-[11px] text-slate-600 bg-slate-50 px-2.5 py-1 rounded border border-slate-200/60">
+                                {d.especificaciones}
+                              </p>
+                            )}
+
+                            <div
+                              className={`grid grid-cols-1 ${
+                                esCelular ? "sm:grid-cols-4" : "sm:grid-cols-2"
+                              } gap-1.5 text-[11px] font-mono pt-0.5`}
+                            >
+                              <div>
+                                <span className="text-[10px] text-slate-400 font-sans font-semibold">
+                                  S/N:{" "}
+                                </span>
+                                <span className="text-slate-800 font-semibold">
+                                  {d.serial || "—"}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-slate-400 font-sans font-semibold">
+                                  MAC:{" "}
+                                </span>
+                                <span className="text-slate-800 font-semibold">
+                                  {d.macAddress || "—"}
+                                </span>
+                              </div>
+                              {esCelular && (
+                                <>
+                                  <div>
+                                    <span className="text-[10px] text-slate-400 font-sans font-semibold">
+                                      IMEI 1:{" "}
+                                    </span>
+                                    <span className="text-slate-800 font-semibold">
+                                      {d.imei1 || "—"}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] text-slate-400 font-sans font-semibold">
+                                      IMEI 2:{" "}
+                                    </span>
+                                    <span className="text-slate-800 font-semibold">
+                                      {d.imei2 || "—"}
+                                    </span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Recuadro de Firma de Conformidad del Empleado */}
+                    <div className="bg-white rounded-xl p-3 border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <PenTool className="w-3.5 h-3.5 text-blue-600" />
+                          Conformidad de {trabajador.nombre}
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          {firmaEmpleado
+                            ? "El empleado firmó en conformidad la tenencia y datos de estos dispositivos."
+                            : "Este empleado aún no ha registrado su firma digital."}
+                        </p>
+                      </div>
+
+                      {firmaEmpleado ? (
+                        <div className="flex items-center gap-3 self-end sm:self-center">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={firmaEmpleado}
+                            alt={`Firma de ${trabajador.nombre}`}
+                            className="h-14 w-36 object-contain bg-slate-50 border border-slate-200 rounded-lg p-1"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(equipos[0])}
+                            className="text-xs font-semibold text-blue-600 hover:underline"
+                          >
+                            Cambiar firma
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(equipos[0])}
+                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition"
+                        >
+                          <PenTool className="w-3.5 h-3.5" />
+                          <span>Firmar Ahora</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </article>
+            );
+          })
         ) : (
           dispositivos.map((d) => {
             const totalDeEsteTrabajador =
@@ -563,6 +672,12 @@ export default function RegistrosPage() {
                       >
                         {d.propiedad || "Corporativo"}
                       </span>
+                      {d.firmaConformidad && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Firmado
+                        </span>
+                      )}
                       {d.codigoInventario && (
                         <span className="text-[11px] font-mono font-bold bg-slate-100 text-slate-800 px-2 py-0.5 rounded-md border border-slate-200">
                           #{d.codigoInventario}
@@ -675,18 +790,18 @@ export default function RegistrosPage() {
         )}
       </section>
 
-      {/* MODAL PARA EDITAR UN DISPOSITIVO GUARDADO */}
+      {/* MODAL PARA EDITAR UN DISPOSITIVO GUARDADO O FIRMAR */}
       {editingDevice && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 space-y-4 my-auto">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 space-y-4 my-auto max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <Pencil className="w-4 h-4 text-blue-600" />
-                  Editar Dispositivo Guardado
+                  Editar Dispositivo y Firma
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Trabajador:{" "}
+                  Empleado:{" "}
                   <strong className="text-slate-800">
                     {editingDevice.trabajador.nombre}
                   </strong>{" "}
@@ -908,6 +1023,34 @@ export default function RegistrosPage() {
                   placeholder="RAM, procesador, capacidad, estado, accesorios..."
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
                 />
+              </div>
+
+              {/* Cuadro de Firma Digital también dentro del modal de edición */}
+              <div className="space-y-2 pt-1">
+                <SignaturePad
+                  value={editForm.firmaConformidad}
+                  onChange={(sig) =>
+                    setEditForm({ ...editForm, firmaConformidad: sig })
+                  }
+                  workerName={editingDevice.trabajador.nombre}
+                />
+                <label className="flex items-center gap-2 text-xs text-slate-700 font-medium px-1 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={editForm.aplicarFirmaATodos}
+                    onChange={(e) =>
+                      setEditForm({
+                        ...editForm,
+                        aplicarFirmaATodos: e.target.checked,
+                      })
+                    }
+                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>
+                    Aplicar esta firma a todos los dispositivos de{" "}
+                    <strong>{editingDevice.trabajador.nombre}</strong>
+                  </span>
+                </label>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">

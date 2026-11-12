@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
       macAddress: string | null;
       imei1: string | null;
       imei2: string | null;
+      firmaConformidad?: string | null;
       createdAt: Date | string;
       trabajador: {
         id: string;
@@ -141,6 +142,7 @@ export async function GET(req: NextRequest) {
         "MAC Address",
         "IMEI 1",
         "IMEI 2",
+        "Firma de Conformidad",
       ];
 
       const rows = dispositivos.map((d) => [
@@ -161,6 +163,7 @@ export async function GET(req: NextRequest) {
         escapeCsvField(d.macAddress),
         escapeCsvField(d.imei1 ? `'${d.imei1}` : ""),
         escapeCsvField(d.imei2 ? `'${d.imei2}` : ""),
+        escapeCsvField(d.firmaConformidad ? "FIRMADO" : "PENDIENTE"),
       ]);
 
       const csvContent =
@@ -206,6 +209,8 @@ export async function POST(req: NextRequest) {
       macAddress,
       imei1,
       imei2,
+      firmaConformidad,
+      aplicarFirmaATodos,
     } = body;
 
     if (!trabajadorId || typeof trabajadorId !== "string") {
@@ -273,11 +278,21 @@ export async function POST(req: NextRequest) {
           macAddress: macAddress?.trim()?.toUpperCase() || null,
           imei1: esCelular ? imei1?.trim() || null : null,
           imei2: esCelular ? imei2?.trim() || null : null,
+          firmaConformidad: firmaConformidad || null,
         },
         include: {
           trabajador: true,
         },
       });
+
+      if (firmaConformidad && aplicarFirmaATodos !== false) {
+        await prisma.dispositivo
+          .updateMany({
+            where: { trabajadorId: trabajadorExiste.id },
+            data: { firmaConformidad },
+          })
+          .catch(() => {});
+      }
 
       return NextResponse.json(nuevoDispositivo, { status: 201 });
     } catch {
@@ -295,11 +310,19 @@ export async function POST(req: NextRequest) {
         macAddress: macAddress?.trim()?.toUpperCase() || null,
         imei1: esCelular ? imei1?.trim() || null : null,
         imei2: esCelular ? imei2?.trim() || null : null,
+        firmaConformidad: firmaConformidad || null,
         trabajadorId: trabajador.id,
         createdAt: new Date().toISOString(),
         trabajador,
       };
       dispositivosFallback.unshift(nuevoDemo);
+      if (firmaConformidad && aplicarFirmaATodos !== false) {
+        for (const item of dispositivosFallback) {
+          if (item.trabajadorId === trabajador.id) {
+            item.firmaConformidad = firmaConformidad;
+          }
+        }
+      }
       return NextResponse.json(nuevoDemo, { status: 201 });
     }
   } catch (error: unknown) {
@@ -327,6 +350,8 @@ export async function PUT(req: NextRequest) {
       macAddress,
       imei1,
       imei2,
+      firmaConformidad,
+      aplicarFirmaATodos,
     } = body;
 
     if (!id || typeof id !== "string") {
@@ -364,11 +389,23 @@ export async function PUT(req: NextRequest) {
           macAddress: macAddress?.trim()?.toUpperCase() || null,
           imei1: esCelular ? imei1?.trim() || null : null,
           imei2: esCelular ? imei2?.trim() || null : null,
+          ...(firmaConformidad !== undefined
+            ? { firmaConformidad: firmaConformidad || null }
+            : {}),
         },
         include: {
           trabajador: true,
         },
       });
+
+      if (firmaConformidad && aplicarFirmaATodos !== false) {
+        await prisma.dispositivo
+          .updateMany({
+            where: { trabajadorId: actualizado.trabajadorId },
+            data: { firmaConformidad },
+          })
+          .catch(() => {});
+      }
 
       return NextResponse.json(actualizado, { status: 200 });
     } catch {
@@ -399,9 +436,20 @@ export async function PUT(req: NextRequest) {
         macAddress: macAddress?.trim()?.toUpperCase() || null,
         imei1: esCelular ? imei1?.trim() || null : null,
         imei2: esCelular ? imei2?.trim() || null : null,
+        firmaConformidad:
+          firmaConformidad !== undefined
+            ? firmaConformidad || null
+            : actual.firmaConformidad,
       };
 
       dispositivosFallback[idx] = actualizadoDemo;
+      if (firmaConformidad && aplicarFirmaATodos !== false) {
+        for (const item of dispositivosFallback) {
+          if (item.trabajadorId === trabajador.id) {
+            item.firmaConformidad = firmaConformidad;
+          }
+        }
+      }
       return NextResponse.json(actualizadoDemo, { status: 200 });
     }
   } catch (error: unknown) {

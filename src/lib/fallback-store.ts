@@ -18,6 +18,7 @@ export interface DispositivoDemo {
   macAddress: string | null;
   imei1: string | null;
   imei2: string | null;
+  firmaConformidad?: string | null;
   trabajadorId: string;
   createdAt: string;
   trabajador: TrabajadorDemo;

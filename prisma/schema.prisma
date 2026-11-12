@@ -38,6 +38,7 @@ model Dispositivo {
   macAddress       String?
   imei1            String?
   imei2            String?
+  firmaConformidad String?    @db.Text
   trabajadorId     String
   trabajador       Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
   createdAt        DateTime   @default(now())
