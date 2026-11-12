@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, ensurePostgresSchema } from "@/lib/prisma";
 import {
   NOMINA_OFICIAL_SUVICA,
   trabajadoresFallback,
   dispositivosFallback,
+  loadFallbackFromDisk,
+  saveFallbackToDisk,
 } from "@/lib/fallback-store";
 
 const CEDULAS_DEMO_ANTERIORES = [
@@ -29,6 +31,8 @@ export async function GET(req: NextRequest) {
     if (!process.env.DATABASE_URL) {
       throw new Error("DATABASE_URL no configurada (modo vista previa local)");
     }
+
+    await ensurePostgresSchema();
 
     // Sincronización ultrarrápida (1 sola consulta SQL masiva con createMany + skipDuplicates)
     if (!globalSync.nominaSuvicaSincronizada) {
@@ -83,7 +87,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ trabajadores });
   } catch {
-    // Fallback local en memoria enriquecido con los dispositivos que maneja cada trabajador
+    loadFallbackFromDisk();
+    // Fallback local en memoria/disco enriquecido con los dispositivos que maneja cada trabajador
     const cleanQ = q ? q.toLowerCase().replace(/[\.\s]/g, "") : "";
     const filtrados = (
       q
@@ -138,6 +143,8 @@ export async function POST(req: NextRequest) {
         throw new Error("Modo vista previa local");
       }
 
+      await ensurePostgresSchema();
+
       const trabajador = await prisma.trabajador.upsert({
         where: { cedula: cedulaNormalizada },
         update: {
@@ -174,6 +181,7 @@ export async function POST(req: NextRequest) {
         _count: { dispositivos: 0 },
       };
       trabajadoresFallback.unshift(nuevo);
+      saveFallbackToDisk();
       return NextResponse.json(nuevo, { status: 201 });
     }
   } catch (error: unknown) {

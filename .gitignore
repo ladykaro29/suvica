@@ -11,4 +11,6 @@ yarn-debug.log*
 yarn-error.log*
 .tsbuildinfo
 next-env.d.ts
+.inventario-local.json
+
 

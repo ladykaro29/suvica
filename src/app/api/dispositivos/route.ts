@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, ensurePostgresSchema } from "@/lib/prisma";
 import { TipoEquipo } from "@prisma/client";
 import {
   dispositivosFallback,
   trabajadoresFallback,
+  loadFallbackFromDisk,
+  saveFallbackToDisk,
 } from "@/lib/fallback-store";
 
 function escapeCsvField(value: string | null | undefined): string {
@@ -51,6 +53,8 @@ export async function GET(req: NextRequest) {
         throw new Error("Modo vista previa local");
       }
 
+      await ensurePostgresSchema();
+
       dispositivos = await prisma.dispositivo.findMany({
         where: {
           ...(tipo && ["Laptop", "Celular", "Radio", "Otro"].includes(tipo)
@@ -91,6 +95,7 @@ export async function GET(req: NextRequest) {
         },
       });
     } catch {
+      loadFallbackFromDisk();
       dispositivos = dispositivosFallback.filter((d) => {
         if (tipo && d.tipoEquipo !== tipo) return false;
         if (propiedad && d.propiedad !== propiedad) return false;
@@ -236,6 +241,8 @@ export async function POST(req: NextRequest) {
         throw new Error("Modo vista previa local");
       }
 
+      await ensurePostgresSchema();
+
       let trabajadorExiste = await prisma.trabajador.findUnique({
         where: { id: trabajadorId },
       });
@@ -323,6 +330,7 @@ export async function POST(req: NextRequest) {
           }
         }
       }
+      saveFallbackToDisk();
       return NextResponse.json(nuevoDemo, { status: 201 });
     }
   } catch (error: unknown) {
@@ -375,6 +383,8 @@ export async function PUT(req: NextRequest) {
       if (!process.env.DATABASE_URL) {
         throw new Error("Modo vista previa local");
       }
+
+      await ensurePostgresSchema();
 
       const actualizado = await prisma.dispositivo.update({
         where: { id },
@@ -450,6 +460,7 @@ export async function PUT(req: NextRequest) {
           }
         }
       }
+      saveFallbackToDisk();
       return NextResponse.json(actualizadoDemo, { status: 200 });
     }
   } catch (error: unknown) {
@@ -478,12 +489,15 @@ export async function DELETE(req: NextRequest) {
       if (!process.env.DATABASE_URL) {
         throw new Error("Modo vista previa local");
       }
+      await ensurePostgresSchema();
       await prisma.dispositivo.delete({ where: { id } });
       return NextResponse.json({ ok: true });
     } catch {
+      loadFallbackFromDisk();
       const idx = dispositivosFallback.findIndex((d) => d.id === id);
       if (idx !== -1) {
         dispositivosFallback.splice(idx, 1);
+        saveFallbackToDisk();
       }
       return NextResponse.json({ ok: true });
     }

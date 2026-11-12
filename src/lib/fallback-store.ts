@@ -260,6 +260,7 @@ export const NOMINA_OFICIAL_SUVICA: Omit<TrabajadorDemo, "id">[] = [
 const globalFallback = globalThis as unknown as {
   trabajadoresDemo?: TrabajadorDemo[];
   dispositivosDemo?: DispositivoDemo[];
+  diskLoaded?: boolean;
 };
 
 export const trabajadoresFallback: TrabajadorDemo[] =
@@ -274,3 +275,58 @@ export const dispositivosFallback: DispositivoDemo[] =
 
 globalFallback.trabajadoresDemo = trabajadoresFallback;
 globalFallback.dispositivosDemo = dispositivosFallback;
+
+export function loadFallbackFromDisk(): void {
+  if (typeof window !== "undefined" || globalFallback.diskLoaded) return;
+  try {
+    const req = eval("require");
+    const fs = req("fs");
+    const path = req("path");
+    const filePath = path.join(process.cwd(), ".inventario-local.json");
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed.dispositivos) && dispositivosFallback.length === 0) {
+        dispositivosFallback.push(...parsed.dispositivos);
+      }
+      if (Array.isArray(parsed.trabajadoresExtras)) {
+        for (const extra of parsed.trabajadoresExtras) {
+          if (!trabajadoresFallback.some((t) => t.cedula === extra.cedula)) {
+            trabajadoresFallback.unshift(extra);
+          }
+        }
+      }
+    }
+    globalFallback.diskLoaded = true;
+  } catch {
+    // ignore disk read errors
+  }
+}
+
+export function saveFallbackToDisk(): void {
+  if (typeof window !== "undefined") return;
+  try {
+    const req = eval("require");
+    const fs = req("fs");
+    const path = req("path");
+    const filePath = path.join(process.cwd(), ".inventario-local.json");
+    const cedulasOficiales = new Set(NOMINA_OFICIAL_SUVICA.map((t) => t.cedula));
+    const trabajadoresExtras = trabajadoresFallback.filter(
+      (t) => !cedulasOficiales.has(t.cedula)
+    );
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify(
+        {
+          dispositivos: dispositivosFallback,
+          trabajadoresExtras,
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+  } catch {
+    // ignore disk write errors
+  }
+}
