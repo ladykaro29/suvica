@@ -7,7 +7,7 @@
 export interface VaultDispositivo {
   id: string;
   codigoInventario: string | null;
-  tipoEquipo: "Laptop" | "Celular" | "Radio" | "Otro";
+  tipoEquipo: "Laptop" | "Celular" | "Impresora" | "Radio" | "Otro";
   propiedad?: string;
   marcaModelo: string | null;
   serial: string | null;

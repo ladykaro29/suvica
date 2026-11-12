@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Laptop,
   Smartphone,
+  Printer,
   Radio as RadioIcon,
   Cpu,
   User,
@@ -35,7 +36,7 @@ import {
   getLocalVaultDevices,
 } from "@/lib/local-vault";
 
-type TipoEquipo = "Laptop" | "Celular" | "Radio" | "Otro";
+type TipoEquipo = "Laptop" | "Celular" | "Impresora" | "Radio" | "Otro";
 type PropiedadEquipo = "Corporativo" | "Personal";
 
 interface DispositivoConTrabajador {
@@ -335,6 +336,8 @@ export default function RegistrosPage() {
         return <Laptop className="w-3.5 h-3.5" />;
       case "Celular":
         return <Smartphone className="w-3.5 h-3.5" />;
+      case "Impresora":
+        return <Printer className="w-3.5 h-3.5" />;
       case "Radio":
         return <RadioIcon className="w-3.5 h-3.5" />;
       default:
@@ -446,23 +449,25 @@ export default function RegistrosPage() {
         </div>
 
         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-          {["", "Laptop", "Celular", "Radio", "Otro"].map((tipo) => {
-            const active = tipoFiltro === tipo;
-            return (
-              <button
-                key={tipo || "all"}
-                type="button"
-                onClick={() => setTipoFiltro(tipo)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition ${
-                  active
-                    ? "bg-blue-600 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                {tipo || "Todos los Tipos"}
-              </button>
-            );
-          })}
+          {["", "Laptop", "Celular", "Impresora", "Radio", "Otro"].map(
+            (tipo) => {
+              const active = tipoFiltro === tipo;
+              return (
+                <button
+                  key={tipo || "all"}
+                  type="button"
+                  onClick={() => setTipoFiltro(tipo)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition ${
+                    active
+                      ? "bg-blue-600 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {tipo || "Todos los Tipos"}
+                </button>
+              );
+            }
+          )}
         </div>
 
         {/* Filtro por Propiedad: Corporativo vs Personal */}
@@ -523,19 +528,30 @@ export default function RegistrosPage() {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <User className="w-4 h-4 text-blue-600 shrink-0" />
+                      {trabajador.cedula.startsWith("DEPTO-") ? (
+                        <Building2 className="w-4 h-4 text-indigo-600 shrink-0" />
+                      ) : (
+                        <User className="w-4 h-4 text-blue-600 shrink-0" />
+                      )}
                       <h3 className="text-sm font-bold text-slate-900 truncate">
                         {trabajador.nombre}
                       </h3>
+                      {trabajador.cedula.startsWith("DEPTO-") && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full border border-indigo-200">
+                          🏢 Equipo de Departamento
+                        </span>
+                      )}
                       {firmaEmpleado ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
                           <CheckCircle2 className="w-3 h-3" />
                           Firmado
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">
-                          Sin firma
-                        </span>
+                        !trabajador.cedula.startsWith("DEPTO-") && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">
+                            Sin firma
+                          </span>
+                        )
                       )}
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5 truncate">
@@ -897,34 +913,34 @@ export default function RegistrosPage() {
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Categoría del Equipo *
                 </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {(["Laptop", "Celular", "Radio", "Otro"] as const).map(
-                    (tipo) => {
-                      const active = editForm.tipoEquipo === tipo;
-                      return (
-                        <button
-                          key={tipo}
-                          type="button"
-                          onClick={() =>
-                            setEditForm({
-                              ...editForm,
-                              tipoEquipo: tipo,
-                              ...(tipo !== "Celular"
-                                ? { imei1: "", imei2: "" }
-                                : {}),
-                            })
-                          }
-                          className={`py-2 px-2 rounded-xl border text-xs font-bold transition ${
-                            active
-                              ? "bg-blue-600 text-white border-blue-600"
-                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                          }`}
-                        >
-                          {tipo}
-                        </button>
-                      );
-                    }
-                  )}
+                <div className="grid grid-cols-5 gap-1.5">
+                  {(
+                    ["Laptop", "Celular", "Impresora", "Radio", "Otro"] as const
+                  ).map((tipo) => {
+                    const active = editForm.tipoEquipo === tipo;
+                    return (
+                      <button
+                        key={tipo}
+                        type="button"
+                        onClick={() =>
+                          setEditForm({
+                            ...editForm,
+                            tipoEquipo: tipo,
+                            ...(tipo !== "Celular"
+                              ? { imei1: "", imei2: "" }
+                              : {}),
+                          })
+                        }
+                        className={`py-2 px-1.5 rounded-xl border text-[11px] font-bold transition ${
+                          active
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                        }`}
+                      >
+                        {tipo}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

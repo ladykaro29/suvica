@@ -27,7 +27,8 @@ export async function ensurePostgresSchema(): Promise<void> {
   }
 
   const statements = [
-    `CREATE TYPE "TipoEquipo" AS ENUM ('Laptop', 'Celular', 'Radio', 'Otro')`,
+    `CREATE TYPE "TipoEquipo" AS ENUM ('Laptop', 'Celular', 'Impresora', 'Radio', 'Otro')`,
+    `ALTER TYPE "TipoEquipo" ADD VALUE IF NOT EXISTS 'Impresora'`,
     `CREATE TABLE IF NOT EXISTS "Trabajador" (
       "id" TEXT NOT NULL,
       "empresa" TEXT NOT NULL,

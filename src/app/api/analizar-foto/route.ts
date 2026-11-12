@@ -6,7 +6,7 @@ const responseSchema: Schema = {
   properties: {
     tipoEquipo: {
       type: Type.STRING,
-      enum: ["Laptop", "Celular", "Radio", "Otro"],
+      enum: ["Laptop", "Celular", "Impresora", "Radio", "Otro"],
       nullable: true,
     },
     marcaModelo: {
@@ -142,12 +142,12 @@ export async function POST(req: NextRequest) {
         ? "la foto"
         : `estas ${imageParts.length} fotos del mismo equipo (unifica lo visible en todas)`
     }:
-- tipoEquipo: "Laptop", "Celular", "Radio" u "Otro".
-- marcaModelo: Marca y modelo exactos.
+- tipoEquipo: "Laptop", "Celular", "Impresora", "Radio" u "Otro".
+- marcaModelo: Marca y modelo exactos (ej. Epson EcoTank L3250, HP LaserJet, Dell Latitude, etc.).
 - serial: S/N, Serial Number, Service Tag o MEID.
-- especificaciones: CPU/RAM/Disco/P-N (Laptop), Banda UHF-VHF/MHz/Modelo técnico (Radio), GB/RAM/Modelo técnico (Celular).
-- macAddress: MAC en formato XX:XX:XX:XX:XX:XX.
-- imei1, imei2: IMEI de 15 dígitos (SOLO si es Celular; para Laptop y Radio devuelve null).
+- especificaciones: CPU/RAM/Disco/P-N (Laptop), Tipo de impresora/Tinta o Tóner/Red-USB-WiFi (Impresora), Banda UHF-VHF/MHz/Modelo técnico (Radio), GB/RAM/Modelo técnico (Celular).
+- macAddress: MAC en formato XX:XX:XX:XX:XX:XX (o IP si es Impresora de red).
+- imei1, imei2: IMEI de 15 dígitos (SOLO si es Celular; para Laptop, Impresora y Radio devuelve null).
 - codigoInventario: Código de etiqueta de activo si aparece.
 Si un dato no es visible, devuelve null.`;
 
@@ -209,9 +209,13 @@ Si un dato no es visible, devuelve null.`;
     }
 
     const parsed = JSON.parse(responseText);
-    const tipoDetectado = ["Laptop", "Celular", "Radio", "Otro"].includes(
-      parsed.tipoEquipo
-    )
+    const tipoDetectado = [
+      "Laptop",
+      "Celular",
+      "Impresora",
+      "Radio",
+      "Otro",
+    ].includes(parsed.tipoEquipo)
       ? parsed.tipoEquipo
       : null;
 

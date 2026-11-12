@@ -31,6 +31,7 @@ import {
   ChevronDown,
   ChevronUp,
   UserCheck2,
+  Printer,
 } from "lucide-react";
 import { compressImageClient } from "@/lib/image-compression";
 import { trabajadoresFallback } from "@/lib/fallback-store";
@@ -40,7 +41,7 @@ import {
   markDeviceDeletedInVault,
 } from "@/lib/local-vault";
 
-type TipoEquipo = "Laptop" | "Celular" | "Radio" | "Otro";
+type TipoEquipo = "Laptop" | "Celular" | "Impresora" | "Radio" | "Otro";
 type PropiedadEquipo = "Corporativo" | "Personal";
 
 export interface DispositivoResumen {
@@ -84,6 +85,13 @@ export default function CapturaInventarioPage() {
   // Meta de cantidad de dispositivos a registrar para el trabajador actual
   const [metaDispositivos, setMetaDispositivos] = useState<number>(2);
   const [showWorkerDevices, setShowWorkerDevices] = useState<boolean>(false);
+
+  // Modo de asignación: A una persona específica vs A un Departamento / Área completa (ej. Impresoras)
+  const [modoAsignacion, setModoAsignacion] = useState<
+    "empleado" | "departamento"
+  >("empleado");
+  const [deptoEmpresa, setDeptoEmpresa] = useState<string>("SUVICA");
+  const [deptoCustom, setDeptoCustom] = useState<string>("");
 
   // Modal rápido para crear trabajador en campo si no existe
   const [showNewWorkerModal, setShowNewWorkerModal] = useState(false);
@@ -165,10 +173,13 @@ export default function CapturaInventarioPage() {
 
   // Filtrado instantáneo por nombre, cédula (con o sin puntos), cargo, empresa o departamento
   const filteredTrabajadores = useMemo(() => {
+    const soloPersonas = trabajadores.filter(
+      (t) => !t.cedula.startsWith("DEPTO-")
+    );
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return trabajadores.slice(0, 40);
+    if (!q) return soloPersonas.slice(0, 40);
     const cleanQ = q.replace(/[\.\-\s]/g, "");
-    return trabajadores
+    return soloPersonas
       .filter((t) => {
         const cleanCedula = t.cedula.toLowerCase().replace(/[\.\-\s]/g, "");
         return (
@@ -182,6 +193,94 @@ export default function CapturaInventarioPage() {
       })
       .slice(0, 40);
   }, [trabajadores, searchQuery]);
+
+  // Lista de departamentos disponibles para la empresa seleccionada (para asignar Impresoras / Equipos de Área)
+  const departamentosDeEmpresa = useMemo(() => {
+    const basePorEmpresa: Record<string, string[]> = {
+      SUVICA: [
+        "ADMINISTRACIÓN",
+        "DIRECCIÓN",
+        "VENTAS",
+        "DESPACHO DE MERCANCÍA",
+        "OPERACIONES",
+        "COMPRAS",
+        "SISTEMAS / TI",
+        "RECEPCIÓN",
+        "ALMACÉN",
+        "EMPAQUE",
+        "VENTAS Y CALETAS MERIDA",
+        "VENTAS Y CALETAS BARQUISIMETO",
+        "VENTAS Y CALETAS VALENCIA",
+        "VENTAS Y CALETAS CARACAS",
+        "VENTAS Y CALETAS MARACAY",
+        "VENTAS Y CALETAS PORLAMAR",
+      ],
+      "SUVICA AGROSERVICIOS": [
+        "ADMINISTRACIÓN",
+        "OPERACIONES",
+        "CHOFERES",
+        "ALMACÉN",
+      ],
+      SUVIAGRICOLA: ["DIRECCIÓN", "FINCA MIRAFLORES", "ADMINISTRACIÓN"],
+      SUVICARNE: ["ADMINISTRACIÓN", "GALPÓN", "OPERACIONES"],
+    };
+
+    const set = new Set<string>(basePorEmpresa[deptoEmpresa] || ["ADMINISTRACIÓN"]);
+    for (const t of trabajadores) {
+      if (t.empresa === deptoEmpresa && t.departamento) {
+        set.add(t.departamento.toUpperCase());
+      }
+    }
+    return Array.from(set);
+  }, [trabajadores, deptoEmpresa]);
+
+  // Seleccionar un Departamento completo como titular del equipo (ej. Impresora de Administración)
+  const handleSelectDepartamento = (empresa: string, departamento: string) => {
+    const cleanEmp = empresa
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+    const cleanDep = departamento
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+    const cedulaDepto = `DEPTO-${cleanEmp}-${cleanDep}`;
+
+    const existente = trabajadores.find(
+      (t) =>
+        t.cedula === cedulaDepto ||
+        (t.cedula.startsWith("DEPTO-") &&
+          t.empresa.toUpperCase() === empresa.trim().toUpperCase() &&
+          t.departamento.toUpperCase() === departamento.trim().toUpperCase())
+    );
+
+    const holder: Trabajador = existente || {
+      id: `depto-${cleanEmp}-${cleanDep}`,
+      cedula: cedulaDepto,
+      nombre: `DEPARTAMENTO: ${departamento.trim().toUpperCase()}`,
+      cargo: "EQUIPO COMPARTIDO DE DEPARTAMENTO (SIN ASIGNACIÓN PERSONAL)",
+      departamento: departamento.trim().toUpperCase(),
+      empresa: empresa.trim().toUpperCase(),
+      dispositivos: [],
+      _count: { dispositivos: 0 },
+    };
+
+    setSelectedTrabajador(holder);
+    setSearchQuery(`${holder.nombre} (${holder.empresa})`);
+    setDropdownOpen(false);
+    setStatusMessage(null);
+    setTipoEquipo("Impresora");
+    setPropiedad("Corporativo");
+    setImei1("");
+    setImei2("");
+    const actuales =
+      holder._count?.dispositivos ?? holder.dispositivos?.length ?? 0;
+    setMetaDispositivos(Math.max(actuales + 1, 1));
+    const firmaPrevia =
+      holder.dispositivos?.find((d) => Boolean(d.firmaConformidad))
+        ?.firmaConformidad ?? null;
+    setFirmaConformidad(firmaPrevia);
+  };
 
   const handleSelectTrabajador = (t: Trabajador) => {
     setSelectedTrabajador(t);
@@ -314,7 +413,9 @@ export default function CapturaInventarioPage() {
       // Rellenar/fusionar el formulario conservando valores previos si la nueva foto no los incluye
       const detectedType: TipoEquipo =
         data.tipoEquipo &&
-        ["Laptop", "Celular", "Radio", "Otro"].includes(data.tipoEquipo)
+        ["Laptop", "Celular", "Impresora", "Radio", "Otro"].includes(
+          data.tipoEquipo
+        )
           ? (data.tipoEquipo as TipoEquipo)
           : tipoEquipo;
 
@@ -590,7 +691,7 @@ export default function CapturaInventarioPage() {
     selectedTrabajador?._count?.dispositivos ?? dispositivosTrabajador.length;
 
   const resumenPorTipo = useMemo(() => {
-    const counts = { Laptop: 0, Celular: 0, Radio: 0, Otro: 0 };
+    const counts = { Laptop: 0, Celular: 0, Impresora: 0, Radio: 0, Otro: 0 };
     for (const d of dispositivosTrabajador) {
       if (counts[d.tipoEquipo] !== undefined) {
         counts[d.tipoEquipo]++;
@@ -626,6 +727,20 @@ export default function CapturaInventarioPage() {
           labelMac: "Dirección MAC Wi-Fi / Bluetooth (XX:XX:XX:XX:XX:XX)",
           mostrarImei: true,
         };
+      case "Impresora":
+        return {
+          tituloSeccion: "Datos de la Impresora del Departamento (Sin IMEI)",
+          placeholderModelo:
+            "Ej. Epson EcoTank L3250 / HP LaserJet Pro M404dn",
+          labelSerial: "Número de Serie de la Impresora (S/N) *",
+          placeholderSerial: "Ej. X7K9012345 / CNB8H12345",
+          labelSpecs:
+            "Tipo (Tinta Continua / Láser / Térmica), Conexión (Red / Wi-Fi / USB) y Tóner",
+          placeholderSpecs:
+            "Ej. Multifuncional Tinta Continua • Conectada por Red/Wi-Fi",
+          labelMac: "Dirección MAC o IP de Red (Si es impresora de red/Wi-Fi)",
+          mostrarImei: false,
+        };
       case "Radio":
         return {
           tituloSeccion:
@@ -654,27 +769,178 @@ export default function CapturaInventarioPage() {
 
   return (
     <div className="space-y-4">
-      {/* PASO 1: Selección de Trabajador y Gestión de sus Múltiples Dispositivos */}
-      <section className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80">
-        <div className="flex items-center justify-between mb-2.5">
+      {/* PASO 1: Selección de Trabajador o Departamento (para Impresoras / Equipos de Área) */}
+      <section className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-3">
+        <div className="flex items-center justify-between">
           <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
             <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[11px]">
               1
             </span>
-            Trabajador y Sus Dispositivos
+            ¿A quién pertenece el equipo?
           </label>
+          {modoAsignacion === "empleado" && (
+            <button
+              type="button"
+              onClick={() => setShowNewWorkerModal(true)}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 bg-blue-50 px-2.5 py-1 rounded-lg"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              Nuevo Trabajador
+            </button>
+          )}
+        </div>
+
+        {/* Selector de modo: Asignar a Persona vs Asignar a Departamento (Impresoras) */}
+        <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
           <button
             type="button"
-            onClick={() => setShowNewWorkerModal(true)}
-            className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 bg-blue-50 px-2.5 py-1 rounded-lg"
+            onClick={() => {
+              setModoAsignacion("empleado");
+              if (selectedTrabajador?.cedula.startsWith("DEPTO-")) {
+                handleClearTrabajador();
+              }
+            }}
+            className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+              modoAsignacion === "empleado"
+                ? "bg-white text-blue-700 shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
           >
-            <UserPlus className="w-3.5 h-3.5" />
-            Nuevo Trabajador
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>A una Persona</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setModoAsignacion("departamento");
+              handleSelectTipoEquipo("Impresora");
+              setPropiedad("Corporativo");
+              if (
+                !selectedTrabajador ||
+                !selectedTrabajador.cedula.startsWith("DEPTO-")
+              ) {
+                handleSelectDepartamento(deptoEmpresa, "ADMINISTRACIÓN");
+              }
+            }}
+            className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+              modoAsignacion === "departamento"
+                ? "bg-white text-indigo-700 shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <Printer className="w-3.5 h-3.5" />
+            <span>A un Departamento (Impresoras)</span>
           </button>
         </div>
 
-        {/* Buscador Autocompletable */}
-        <div className="relative">
+        {modoAsignacion === "departamento" ? (
+          <div className="bg-indigo-50/60 border border-indigo-200 rounded-xl p-3.5 space-y-3">
+            <div className="flex items-start gap-2">
+              <Printer className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-bold text-indigo-950">
+                  Registro por Departamento (Sin asignar a una persona)
+                </p>
+                <p className="text-[11px] text-slate-600">
+                  Ideal para impresoras, equipos multifuncionales o activos de uso compartido en un área.
+                </p>
+              </div>
+            </div>
+
+            {/* 1. Selección de Empresa */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                1. Selecciona la Empresa:
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                {[
+                  "SUVICA",
+                  "SUVICA AGROSERVICIOS",
+                  "SUVIAGRICOLA",
+                  "SUVICARNE",
+                ].map((emp) => {
+                  const active = deptoEmpresa === emp;
+                  return (
+                    <button
+                      key={emp}
+                      type="button"
+                      onClick={() => {
+                        setDeptoEmpresa(emp);
+                        handleSelectDepartamento(emp, "ADMINISTRACIÓN");
+                      }}
+                      className={`py-2 px-2 rounded-lg text-[11px] font-bold border transition ${
+                        active
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                          : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      {emp}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. Selección del Departamento de esa Empresa */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                2. Selecciona el Departamento donde está la Impresora / Equipo:
+              </label>
+              <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-1">
+                {departamentosDeEmpresa.map((dep) => {
+                  const isSelected =
+                    selectedTrabajador?.cedula.startsWith("DEPTO-") &&
+                    selectedTrabajador.departamento === dep &&
+                    selectedTrabajador.empresa === deptoEmpresa;
+                  return (
+                    <button
+                      key={dep}
+                      type="button"
+                      onClick={() =>
+                        handleSelectDepartamento(deptoEmpresa, dep)
+                      }
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                        isSelected
+                          ? "bg-indigo-700 text-white border-indigo-700 shadow-xs"
+                          : "bg-white text-slate-700 border-slate-200 hover:bg-indigo-50"
+                      }`}
+                    >
+                      {dep}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Opción para escribir un área o ubicación específica */}
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="text"
+                value={deptoCustom}
+                onChange={(e) => setDeptoCustom(e.target.value)}
+                placeholder="¿Otro departamento o área? Escríbelo aquí..."
+                className="flex-1 px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-medium outline-none focus:border-indigo-600"
+              />
+              {deptoCustom.trim() && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSelectDepartamento(
+                      deptoEmpresa,
+                      deptoCustom.trim().toUpperCase()
+                    );
+                    setDeptoCustom("");
+                  }}
+                  className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shrink-0"
+                >
+                  Usar Área
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* Buscador Autocompletable de Empleados */
+          <div className="relative">
           <div className="relative flex items-center">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
             <input
@@ -769,8 +1035,9 @@ export default function CapturaInventarioPage() {
             </div>
           )}
         </div>
+        )}
 
-        {/* Expediente de Múltiples Dispositivos del Trabajador Seleccionado */}
+        {/* Expediente de Múltiples Dispositivos del Trabajador o Departamento Seleccionado */}
         {selectedTrabajador && (
           <div className="mt-3 bg-blue-50/70 border border-blue-200 rounded-xl p-3.5 space-y-3">
             <div className="flex items-start justify-between gap-2">
@@ -878,7 +1145,7 @@ export default function CapturaInventarioPage() {
               </div>
 
               {/* Desglose por tipo */}
-              <div className="grid grid-cols-4 gap-1.5 text-center pt-0.5">
+              <div className="grid grid-cols-5 gap-1.5 text-center pt-0.5">
                 <div className="bg-slate-50 rounded-lg py-1.5 px-1 border border-slate-200/70">
                   <p className="text-xs font-bold text-slate-900">
                     {resumenPorTipo.Laptop}
@@ -893,6 +1160,14 @@ export default function CapturaInventarioPage() {
                   </p>
                   <p className="text-[10px] text-slate-500 font-medium">
                     Celulares
+                  </p>
+                </div>
+                <div className="bg-slate-50 rounded-lg py-1.5 px-1 border border-slate-200/70">
+                  <p className="text-xs font-bold text-slate-900">
+                    {resumenPorTipo.Impresora}
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    Impresoras
                   </p>
                 </div>
                 <div className="bg-slate-50 rounded-lg py-1.5 px-1 border border-slate-200/70">
@@ -1266,11 +1541,12 @@ export default function CapturaInventarioPage() {
           <label className="block text-xs font-semibold text-slate-700 mb-1.5">
             Categoría del Dispositivo #{totalEquiposTrabajador + 1} *
           </label>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-5 gap-1.5">
             {(
               [
                 { id: "Laptop", label: "Laptop", icon: Laptop },
                 { id: "Celular", label: "Celular", icon: Smartphone },
+                { id: "Impresora", label: "Impresora", icon: Printer },
                 { id: "Radio", label: "Radio", icon: RadioIcon },
                 { id: "Otro", label: "Otro", icon: Cpu },
               ] as const

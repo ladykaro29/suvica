@@ -60,7 +60,8 @@ export async function GET(req: NextRequest) {
 
       dispositivos = await prisma.dispositivo.findMany({
         where: {
-          ...(tipo && ["Laptop", "Celular", "Radio", "Otro"].includes(tipo)
+          ...(tipo &&
+          ["Laptop", "Celular", "Impresora", "Radio", "Otro"].includes(tipo)
             ? { tipoEquipo: tipo as TipoEquipo }
             : {}),
           ...(propiedad && ["Corporativo", "Personal"].includes(propiedad)
@@ -233,7 +234,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const tiposValidos: TipoEquipo[] = ["Laptop", "Celular", "Radio", "Otro"];
+    const tiposValidos: TipoEquipo[] = [
+      "Laptop",
+      "Celular",
+      "Impresora",
+      "Radio",
+      "Otro",
+    ];
     const tipoFinal: TipoEquipo = tiposValidos.includes(tipoEquipo)
       ? tipoEquipo
       : "Otro";
@@ -300,7 +307,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const nuevoDispositivo = await prisma.dispositivo.create({
+      const createPayload = {
         data: {
           trabajadorId: trabajadorExiste.id,
           codigoInventario: codigoInventario?.trim() || null,
@@ -317,7 +324,19 @@ export async function POST(req: NextRequest) {
         include: {
           trabajador: true,
         },
-      });
+      };
+
+      let nuevoDispositivo;
+      try {
+        nuevoDispositivo = await prisma.dispositivo.create(createPayload);
+      } catch {
+        await prisma
+          .$executeRawUnsafe(
+            `ALTER TYPE "TipoEquipo" ADD VALUE IF NOT EXISTS 'Impresora'`
+          )
+          .catch(() => {});
+        nuevoDispositivo = await prisma.dispositivo.create(createPayload);
+      }
 
       if (firmaConformidad && aplicarFirmaATodos !== false) {
         await prisma.dispositivo
@@ -396,7 +415,13 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    const tiposValidos: TipoEquipo[] = ["Laptop", "Celular", "Radio", "Otro"];
+    const tiposValidos: TipoEquipo[] = [
+      "Laptop",
+      "Celular",
+      "Impresora",
+      "Radio",
+      "Otro",
+    ];
     const tipoFinal: TipoEquipo = tiposValidos.includes(tipoEquipo)
       ? tipoEquipo
       : "Otro";
