@@ -16,13 +16,22 @@ import {
   Layers,
   Users,
   List,
+  Pencil,
+  Trash2,
+  X,
+  Save,
+  Loader2,
+  UserCheck,
 } from "lucide-react";
+
+type TipoEquipo = "Laptop" | "Celular" | "Radio" | "Otro";
+type PropiedadEquipo = "Corporativo" | "Personal";
 
 interface DispositivoConTrabajador {
   id: string;
   codigoInventario: string | null;
-  tipoEquipo: "Laptop" | "Celular" | "Radio" | "Otro";
-  propiedad?: "Corporativo" | "Personal" | string;
+  tipoEquipo: TipoEquipo;
+  propiedad?: PropiedadEquipo | string;
   marcaModelo: string | null;
   serial: string | null;
   especificaciones: string | null;
@@ -52,6 +61,23 @@ export default function RegistrosPage() {
     "por-persona"
   );
 
+  // Estado para edición y eliminación de registros guardados
+  const [editingDevice, setEditingDevice] =
+    useState<DispositivoConTrabajador | null>(null);
+  const [editForm, setEditForm] = useState({
+    tipoEquipo: "Laptop" as TipoEquipo,
+    propiedad: "Corporativo" as PropiedadEquipo,
+    codigoInventario: "",
+    marcaModelo: "",
+    serial: "",
+    especificaciones: "",
+    macAddress: "",
+    imei1: "",
+    imei2: "",
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   const cargarRegistros = useCallback(async () => {
     try {
       setLoading(true);
@@ -78,6 +104,86 @@ export default function RegistrosPage() {
     }, 200);
     return () => clearTimeout(timer);
   }, [cargarRegistros]);
+
+  // Abrir modal de edición con los datos actuales del dispositivo
+  const handleOpenEdit = (d: DispositivoConTrabajador) => {
+    setEditingDevice(d);
+    setEditForm({
+      tipoEquipo: d.tipoEquipo,
+      propiedad: d.propiedad === "Personal" ? "Personal" : "Corporativo",
+      codigoInventario: d.codigoInventario ?? "",
+      marcaModelo: d.marcaModelo ?? "",
+      serial: d.serial ?? "",
+      especificaciones: d.especificaciones ?? "",
+      macAddress: d.macAddress ?? "",
+      imei1: d.imei1 ?? "",
+      imei2: d.imei2 ?? "",
+    });
+  };
+
+  // Guardar cambios del registro editado (PUT /api/dispositivos)
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDevice) return;
+    setSavingEdit(true);
+    try {
+      const res = await fetch("/api/dispositivos", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingDevice.id,
+          trabajadorId: editingDevice.trabajador.id,
+          tipoEquipo: editForm.tipoEquipo,
+          propiedad: editForm.propiedad,
+          codigoInventario: editForm.codigoInventario,
+          marcaModelo: editForm.marcaModelo,
+          serial: editForm.serial,
+          especificaciones: editForm.especificaciones,
+          macAddress: editForm.macAddress,
+          imei1: editForm.tipoEquipo === "Celular" ? editForm.imei1 : null,
+          imei2: editForm.tipoEquipo === "Celular" ? editForm.imei2 : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "No se pudo actualizar el registro.");
+      }
+      setEditingDevice(null);
+      await cargarRegistros();
+    } catch (error: unknown) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Error al guardar los cambios del dispositivo."
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // Eliminar un registro guardado
+  const handleDeleteDevice = async (d: DispositivoConTrabajador) => {
+    const confirmar = window.confirm(
+      `¿Seguro que deseas eliminar el equipo ${d.tipoEquipo} (${
+        d.marcaModelo || "Sin modelo"
+      }) asignado a ${d.trabajador.nombre}?`
+    );
+    if (!confirmar) return;
+
+    setDeletingId(d.id);
+    try {
+      const res = await fetch(`/api/dispositivos?id=${d.id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        await cargarRegistros();
+      }
+    } catch (error) {
+      console.error("Error eliminando registro:", error);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   // Calcular cuántos dispositivos maneja cada trabajador y agruparlos por trabajador
   const conteoPorTrabajador = useMemo(() => {
@@ -137,8 +243,8 @@ export default function RegistrosPage() {
               {gruposPorTrabajador.length === 1 ? "persona" : "personas"})
             </h2>
             <p className="text-xs text-slate-500">
-              Visualiza múltiples equipos agrupados por trabajador o por
-              dispositivo
+              Visualiza, edita o exporta los equipos registrados por trabajador
+              o por dispositivo
             </p>
           </div>
           <button
@@ -261,7 +367,7 @@ export default function RegistrosPage() {
         </div>
       </section>
 
-      {/* CONTENIDO: Vista Agrupada por Trabajador (Múltiples Dispositivos por Persona) o Lista Individual */}
+      {/* CONTENIDO: Vista Agrupada por Trabajador o Lista Individual */}
       <section className="space-y-3">
         {loading ? (
           <div className="bg-white rounded-2xl p-8 text-center text-xs text-slate-500 border border-slate-200">
@@ -310,7 +416,7 @@ export default function RegistrosPage() {
                       key={d.id}
                       className="bg-slate-50 rounded-xl p-3 border border-slate-200/80 space-y-2"
                     >
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-start justify-between gap-2">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md">
                             {getBadgeIcon(d.tipoEquipo)}
@@ -328,12 +434,34 @@ export default function RegistrosPage() {
                           <span className="text-xs font-bold text-slate-900">
                             {d.marcaModelo || "Sin modelo especificado"}
                           </span>
+                          {d.codigoInventario && (
+                            <span className="text-[10px] font-mono font-bold bg-white text-slate-700 px-2 py-0.5 rounded border border-slate-200">
+                              #{d.codigoInventario}
+                            </span>
+                          )}
                         </div>
-                        {d.codigoInventario && (
-                          <span className="text-[10px] font-mono font-bold bg-white text-slate-700 px-2 py-0.5 rounded border border-slate-200">
-                            #{d.codigoInventario}
-                          </span>
-                        )}
+
+                        {/* Botones de Editar y Eliminar */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(d)}
+                            className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-xs transition"
+                            title="Editar este registro"
+                          >
+                            <Pencil className="w-3 h-3" />
+                            <span>Editar</span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deletingId === d.id}
+                            onClick={() => handleDeleteDevice(d)}
+                            className="p-1.5 rounded-lg bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 transition"
+                            title="Eliminar este registro"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       {d.especificaciones && (
@@ -403,7 +531,7 @@ export default function RegistrosPage() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-md border border-blue-200">
                         {getBadgeIcon(d.tipoEquipo)}
                         {d.tipoEquipo}
@@ -417,16 +545,37 @@ export default function RegistrosPage() {
                       >
                         {d.propiedad || "Corporativo"}
                       </span>
+                      {d.codigoInventario && (
+                        <span className="text-[11px] font-mono font-bold bg-slate-100 text-slate-800 px-2 py-0.5 rounded-md border border-slate-200">
+                          #{d.codigoInventario}
+                        </span>
+                      )}
                     </div>
                     <h3 className="text-sm font-bold text-slate-900 mt-1">
                       {d.marcaModelo || "Marca / Modelo no especificado"}
                     </h3>
                   </div>
-                  {d.codigoInventario && (
-                    <span className="text-[11px] font-mono font-bold bg-slate-100 text-slate-800 px-2.5 py-1 rounded-lg border border-slate-200">
-                      #{d.codigoInventario}
-                    </span>
-                  )}
+
+                  {/* Botones de Editar y Eliminar */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(d)}
+                      className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1 shadow-xs transition"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      <span>Editar</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deletingId === d.id}
+                      onClick={() => handleDeleteDevice(d)}
+                      className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 transition"
+                      title="Eliminar registro"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {d.especificaciones && (
@@ -507,6 +656,272 @@ export default function RegistrosPage() {
           })
         )}
       </section>
+
+      {/* MODAL PARA EDITAR UN DISPOSITIVO GUARDADO */}
+      {editingDevice && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 space-y-4 my-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Pencil className="w-4 h-4 text-blue-600" />
+                  Editar Dispositivo Guardado
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Trabajador:{" "}
+                  <strong className="text-slate-800">
+                    {editingDevice.trabajador.nombre}
+                  </strong>{" "}
+                  ({editingDevice.trabajador.cedula})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingDevice(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-3.5">
+              {/* Tipo de Equipo */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Categoría del Equipo *
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(["Laptop", "Celular", "Radio", "Otro"] as const).map(
+                    (tipo) => {
+                      const active = editForm.tipoEquipo === tipo;
+                      return (
+                        <button
+                          key={tipo}
+                          type="button"
+                          onClick={() =>
+                            setEditForm({
+                              ...editForm,
+                              tipoEquipo: tipo,
+                              ...(tipo !== "Celular"
+                                ? { imei1: "", imei2: "" }
+                                : {}),
+                            })
+                          }
+                          className={`py-2 px-2 rounded-xl border text-xs font-bold transition ${
+                            active
+                              ? "bg-blue-600 text-white border-blue-600"
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          {tipo}
+                        </button>
+                      );
+                    }
+                  )}
+                </div>
+              </div>
+
+              {/* Propiedad: Corporativo vs Personal */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  ¿Es Corporativo o Personal? *
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditForm({ ...editForm, propiedad: "Corporativo" })
+                    }
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                      editForm.propiedad === "Corporativo"
+                        ? "bg-emerald-600 text-white border-emerald-600"
+                        : "bg-slate-50 text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span>Corporativo</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditForm({ ...editForm, propiedad: "Personal" })
+                    }
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                      editForm.propiedad === "Personal"
+                        ? "bg-amber-500 text-white border-amber-500"
+                        : "bg-slate-50 text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Personal</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Marca / Modelo y Código de Inventario */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Marca y Modelo
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.marcaModelo}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, marcaModelo: e.target.value })
+                    }
+                    placeholder="Ej. Lenovo ThinkPad / Samsung A54"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Código de Inventario / Activo
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.codigoInventario}
+                    onChange={(e) =>
+                      setEditForm({
+                        ...editForm,
+                        codigoInventario: e.target.value,
+                      })
+                    }
+                    placeholder="Ej. SUV-0042"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Serial y MAC Address */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Número de Serie (S/N)
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.serial}
+                    onChange={(e) =>
+                      setEditForm({
+                        ...editForm,
+                        serial: e.target.value.toUpperCase(),
+                      })
+                    }
+                    placeholder="S/N o Service Tag"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-mono uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Dirección MAC
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.macAddress}
+                    onChange={(e) =>
+                      setEditForm({
+                        ...editForm,
+                        macAddress: e.target.value.toUpperCase(),
+                      })
+                    }
+                    placeholder="AA:BB:CC:DD:EE:FF"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-mono uppercase"
+                  />
+                </div>
+              </div>
+
+              {/* IMEI 1 e IMEI 2 solo para Celular */}
+              {editForm.tipoEquipo === "Celular" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3 rounded-xl bg-blue-50/60 border border-blue-200">
+                  <div>
+                    <label className="block text-xs font-bold text-blue-900 mb-1">
+                      IMEI 1 (15 dígitos)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={17}
+                      value={editForm.imei1}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          imei1: e.target.value.replace(/\D/g, ""),
+                        })
+                      }
+                      className="w-full px-3 py-2 rounded-xl border border-blue-300 bg-white text-sm font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-blue-900 mb-1">
+                      IMEI 2 (Dual SIM)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={17}
+                      value={editForm.imei2}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          imei2: e.target.value.replace(/\D/g, ""),
+                        })
+                      }
+                      className="w-full px-3 py-2 rounded-xl border border-blue-300 bg-white text-sm font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Especificaciones */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Especificaciones / Características / Observaciones
+                </label>
+                <input
+                  type="text"
+                  value={editForm.especificaciones}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      especificaciones: e.target.value,
+                    })
+                  }
+                  placeholder="RAM, procesador, capacidad, estado, accesorios..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingDevice(null)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white inline-flex items-center gap-1.5 shadow-sm disabled:opacity-60"
+                >
+                  {savingEdit ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>Guardar Cambios</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

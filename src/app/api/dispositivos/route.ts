@@ -293,6 +293,108 @@ export async function POST(req: NextRequest) {
   }
 }
 
+export async function PUT(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const {
+      id,
+      trabajadorId,
+      codigoInventario,
+      tipoEquipo,
+      propiedad,
+      marcaModelo,
+      serial,
+      especificaciones,
+      macAddress,
+      imei1,
+      imei2,
+    } = body;
+
+    if (!id || typeof id !== "string") {
+      return NextResponse.json(
+        { error: "Falta el ID del registro a editar." },
+        { status: 400 }
+      );
+    }
+
+    const tiposValidos: TipoEquipo[] = ["Laptop", "Celular", "Radio", "Otro"];
+    const tipoFinal: TipoEquipo = tiposValidos.includes(tipoEquipo)
+      ? tipoEquipo
+      : "Otro";
+
+    const propiedadFinal: "Corporativo" | "Personal" =
+      propiedad === "Personal" ? "Personal" : "Corporativo";
+
+    const esCelular = tipoFinal === "Celular";
+
+    try {
+      if (!process.env.DATABASE_URL) {
+        throw new Error("Modo vista previa local");
+      }
+
+      const actualizado = await prisma.dispositivo.update({
+        where: { id },
+        data: {
+          ...(trabajadorId ? { trabajadorId } : {}),
+          codigoInventario: codigoInventario?.trim() || null,
+          tipoEquipo: tipoFinal,
+          propiedad: propiedadFinal,
+          marcaModelo: marcaModelo?.trim() || null,
+          serial: serial?.trim()?.toUpperCase() || null,
+          especificaciones: especificaciones?.trim() || null,
+          macAddress: macAddress?.trim()?.toUpperCase() || null,
+          imei1: esCelular ? imei1?.trim() || null : null,
+          imei2: esCelular ? imei2?.trim() || null : null,
+        },
+        include: {
+          trabajador: true,
+        },
+      });
+
+      return NextResponse.json(actualizado, { status: 200 });
+    } catch {
+      const idx = dispositivosFallback.findIndex((d) => d.id === id);
+      if (idx === -1) {
+        return NextResponse.json(
+          { error: "No se encontró el dispositivo a editar." },
+          { status: 404 }
+        );
+      }
+
+      const actual = dispositivosFallback[idx];
+      const trabajador = trabajadorId
+        ? trabajadoresFallback.find((t) => t.id === trabajadorId) ||
+          actual.trabajador
+        : actual.trabajador;
+
+      const actualizadoDemo = {
+        ...actual,
+        trabajadorId: trabajador.id,
+        trabajador,
+        codigoInventario: codigoInventario?.trim() || null,
+        tipoEquipo: tipoFinal,
+        propiedad: propiedadFinal,
+        marcaModelo: marcaModelo?.trim() || null,
+        serial: serial?.trim()?.toUpperCase() || null,
+        especificaciones: especificaciones?.trim() || null,
+        macAddress: macAddress?.trim()?.toUpperCase() || null,
+        imei1: esCelular ? imei1?.trim() || null : null,
+        imei2: esCelular ? imei2?.trim() || null : null,
+      };
+
+      dispositivosFallback[idx] = actualizadoDemo;
+      return NextResponse.json(actualizadoDemo, { status: 200 });
+    }
+  } catch (error: unknown) {
+    console.error("Error en PUT /api/dispositivos:", error);
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Error al actualizar el dispositivo.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
