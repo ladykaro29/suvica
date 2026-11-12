@@ -1,6 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
-import { Camera, ClipboardList, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
+import {
+  BottomNav,
+  HeaderUserBadge,
+} from "@/components/NavigationControls";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -46,9 +50,7 @@ export default function RootLayout({
                 </p>
               </div>
             </Link>
-            <span className="text-[10px] font-semibold uppercase tracking-wider bg-blue-900/60 border border-blue-400/30 px-2.5 py-1 rounded-full">
-              Gemini 2.5
-            </span>
+            <HeaderUserBadge />
           </div>
         </header>
 
@@ -57,27 +59,9 @@ export default function RootLayout({
           {children}
         </main>
 
-        {/* Barra de navegación inferior fija (Mobile-First) */}
-        <nav className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
-          <div className="max-w-lg mx-auto grid grid-cols-2 h-16">
-            <Link
-              href="/"
-              className="flex flex-col items-center justify-center gap-1 text-slate-700 hover:text-blue-600 active:bg-slate-50 transition-colors font-medium text-xs"
-            >
-              <Camera className="w-5 h-5 text-blue-600" />
-              <span>Capturar Equipo</span>
-            </Link>
-            <Link
-              href="/registros"
-              className="flex flex-col items-center justify-center gap-1 text-slate-700 hover:text-blue-600 active:bg-slate-50 transition-colors font-medium text-xs border-l border-slate-100"
-            >
-              <ClipboardList className="w-5 h-5 text-indigo-600" />
-              <span>Registros / Exportar</span>
-            </Link>
-          </div>
-        </nav>
+        {/* Barra de navegación inferior fija (se oculta en /login) */}
+        <BottomNav />
       </body>
     </html>
   );
 }
-
