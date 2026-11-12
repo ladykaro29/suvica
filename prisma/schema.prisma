@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TipoEquipo {
+  Laptop
+  Celular
+  Radio
+  Otro
+}
+
+model Trabajador {
+  id           String        @id @default(cuid())
+  empresa      String
+  departamento String
+  cedula       String        @unique
+  nombre       String
+  cargo        String
+  dispositivos Dispositivo[]
+
+  @@index([nombre])
+  @@index([cedula])
+}
+
+model Dispositivo {
+  id               String     @id @default(cuid())
+  codigoInventario String?
+  tipoEquipo       TipoEquipo
+  marcaModelo      String?
+  macAddress       String?
+  imei1            String?
+  imei2            String?
+  trabajadorId     String
+  trabajador       Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  createdAt        DateTime   @default(now())
+
+  @@index([trabajadorId])
+  @@index([tipoEquipo])
+  @@index([createdAt])
+}
+
