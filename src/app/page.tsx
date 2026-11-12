@@ -31,6 +31,7 @@ import {
   UserCheck2,
 } from "lucide-react";
 import { compressImageClient } from "@/lib/image-compression";
+import { trabajadoresFallback } from "@/lib/fallback-store";
 
 type TipoEquipo = "Laptop" | "Celular" | "Radio" | "Otro";
 type PropiedadEquipo = "Corporativo" | "Personal";
@@ -63,9 +64,10 @@ export interface Trabajador {
 }
 
 export default function CapturaInventarioPage() {
-  // Estado de trabajadores y buscador autocompletable
-  const [trabajadores, setTrabajadores] = useState<Trabajador[]>([]);
-  const [loadingTrabajadores, setLoadingTrabajadores] = useState(true);
+  // Estado de trabajadores pre-cargado al instante en memoria (0ms de espera) y sincronizado en segundo plano
+  const [trabajadores, setTrabajadores] =
+    useState<Trabajador[]>(trabajadoresFallback);
+  const [loadingTrabajadores, setLoadingTrabajadores] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [selectedTrabajador, setSelectedTrabajador] =
@@ -121,17 +123,18 @@ export default function CapturaInventarioPage() {
 
   const formStepRef = useRef<HTMLDivElement | null>(null);
 
-  // Cargar trabajadores (incluyendo su conteo y lista de dispositivos)
-  const fetchTrabajadores = async (keepSelectedId?: string) => {
+  // Cargar trabajadores (incluyendo su conteo y lista de dispositivos) en segundo plano sin bloquear la UI
+  const fetchTrabajadores = async (keepSelectedIdOrCedula?: string) => {
     try {
-      setLoadingTrabajadores(true);
       const res = await fetch("/api/trabajadores");
       const data = await res.json();
       if (res.ok && Array.isArray(data.trabajadores)) {
         setTrabajadores(data.trabajadores);
-        if (keepSelectedId) {
+        if (keepSelectedIdOrCedula) {
           const updated = data.trabajadores.find(
-            (t: Trabajador) => t.id === keepSelectedId
+            (t: Trabajador) =>
+              t.id === keepSelectedIdOrCedula ||
+              t.cedula === keepSelectedIdOrCedula
           );
           if (updated) {
             setSelectedTrabajador(updated);
@@ -231,7 +234,24 @@ export default function CapturaInventarioPage() {
         if (editingDeviceId === id) {
           resetDeviceForm();
         }
-        await fetchTrabajadores(selectedTrabajador.id);
+        const nuevosDispositivos = (selectedTrabajador.dispositivos || []).filter(
+          (d) => d.id !== id
+        );
+        const actualizado: Trabajador = {
+          ...selectedTrabajador,
+          dispositivos: nuevosDispositivos,
+          _count: { dispositivos: nuevosDispositivos.length },
+        };
+        setSelectedTrabajador(actualizado);
+        setTrabajadores((prev) =>
+          prev.map((t) =>
+            t.id === selectedTrabajador.id ||
+            t.cedula === selectedTrabajador.cedula
+              ? actualizado
+              : t
+          )
+        );
+        void fetchTrabajadores(selectedTrabajador.cedula);
       }
     } catch (error) {
       console.error("Error eliminando dispositivo:", error);
@@ -327,10 +347,10 @@ export default function CapturaInventarioPage() {
     setAnalyzing(true);
 
     try {
-      // 1. Comprimir todas las fotos seleccionadas en el cliente (máx 1200px, JPEG 0.8)
+      // 1. Comprimir todas las fotos seleccionadas en el cliente (máx 960px, JPEG 0.72 para subida ultrarrápida)
       const compressedList = await Promise.all(
         files.slice(0, 8).map(async (file, idx) => {
-          const compressed = await compressImageClient(file, 1200, 0.8);
+          const compressed = await compressImageClient(file, 960, 0.72);
           return {
             id: `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
             dataUrl: compressed.dataUrl,
@@ -406,6 +426,7 @@ export default function CapturaInventarioPage() {
         body: JSON.stringify({
           ...(isEditing ? { id: editingDeviceId } : {}),
           trabajadorId: selectedTrabajador.id,
+          trabajadorCedula: selectedTrabajador.cedula,
           codigoInventario,
           tipoEquipo,
           propiedad,
@@ -423,8 +444,29 @@ export default function CapturaInventarioPage() {
         throw new Error(data.error || "Error al guardar el equipo.");
       }
 
+      // Actualización optimista inmediata en memoria (0ms) + sincronización en segundo plano
+      const actuales = selectedTrabajador.dispositivos || [];
+      const nuevosDispositivos = isEditing
+        ? actuales.map((d) => (d.id === editingDeviceId ? data : d))
+        : [data, ...actuales];
+      const trabajadorActualizado: Trabajador = {
+        ...selectedTrabajador,
+        id: data.trabajadorId || selectedTrabajador.id,
+        dispositivos: nuevosDispositivos,
+        _count: { dispositivos: nuevosDispositivos.length },
+      };
+
+      setSelectedTrabajador(trabajadorActualizado);
+      setTrabajadores((prev) =>
+        prev.map((t) =>
+          t.id === selectedTrabajador.id ||
+          t.cedula === selectedTrabajador.cedula
+            ? trabajadorActualizado
+            : t
+        )
+      );
       resetDeviceForm();
-      await fetchTrabajadores(selectedTrabajador.id);
+      void fetchTrabajadores(selectedTrabajador.cedula);
 
       if (isEditing) {
         setStatusMessage({

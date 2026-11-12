@@ -17,7 +17,9 @@ const CEDULAS_DEMO_ANTERIORES = [
   "V-24112233",
 ];
 
-let nominaSincronizadaEnProceso = false;
+const globalSync = globalThis as unknown as {
+  nominaSuvicaSincronizada?: boolean;
+};
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -28,12 +30,11 @@ export async function GET(req: NextRequest) {
       throw new Error("DATABASE_URL no configurada (modo vista previa local)");
     }
 
-    // Sincronizar automáticamente toda la nómina real de los 4 PDFs en PostgreSQL
-    if (!nominaSincronizadaEnProceso) {
+    // Sincronización ultrarrápida (1 sola consulta SQL masiva con createMany + skipDuplicates)
+    if (!globalSync.nominaSuvicaSincronizada) {
+      globalSync.nominaSuvicaSincronizada = true;
       const count = await prisma.trabajador.count();
-      if (count < NOMINA_OFICIAL_SUVICA.length) {
-        nominaSincronizadaEnProceso = true;
-        // Limpiar los 8 trabajadores de ejemplo iniciales si no tienen equipos asociados
+      if (count < 150) {
         await prisma.trabajador
           .deleteMany({
             where: {
@@ -43,26 +44,12 @@ export async function GET(req: NextRequest) {
           })
           .catch(() => {});
 
-        for (const t of NOMINA_OFICIAL_SUVICA) {
-          await prisma.trabajador.upsert({
-            where: { cedula: t.cedula },
-            update: {
-              nombre: t.nombre,
-              cargo: t.cargo,
-              departamento: t.departamento,
-              empresa: t.empresa,
-            },
-            create: {
-              cedula: t.cedula,
-              nombre: t.nombre,
-              cargo: t.cargo,
-              departamento: t.departamento,
-              empresa: t.empresa,
-            },
-          });
-        }
-      } else {
-        nominaSincronizadaEnProceso = true;
+        await prisma.trabajador
+          .createMany({
+            data: NOMINA_OFICIAL_SUVICA,
+            skipDuplicates: true,
+          })
+          .catch(() => {});
       }
     }
 

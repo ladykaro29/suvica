@@ -1,11 +1,11 @@
 /**
- * Comprime y redimensiona una imagen en el navegador a un tamaño máximo de 1200px
- * (ancho o alto) en formato JPEG con calidad 0.8.
+ * Comprime y redimensiona una imagen en el navegador a un tamaño óptimo de 960px
+ * (ancho o alto) en formato JPEG con calidad 0.72 para subida ultrarrápida a Gemini IA.
  */
 export async function compressImageClient(
   file: File,
-  maxDimension = 1200,
-  quality = 0.8
+  maxDimension = 960,
+  quality = 0.72
 ): Promise<{ dataUrl: string; width: number; height: number; sizeKB: number }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -66,4 +66,3 @@ export async function compressImageClient(
     reader.readAsDataURL(file);
   });
 }
-

@@ -50,9 +50,9 @@ interface DispositivoConTrabajador {
 }
 
 export default function RegistrosPage() {
-  const [dispositivos, setDispositivos] = useState<DispositivoConTrabajador[]>(
-    []
-  );
+  const [todosDispositivos, setTodosDispositivos] = useState<
+    DispositivoConTrabajador[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState<string>("");
@@ -81,29 +81,45 @@ export default function RegistrosPage() {
   const cargarRegistros = useCallback(async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (q.trim()) params.set("q", q.trim());
-      if (tipoFiltro) params.set("tipo", tipoFiltro);
-      if (propiedadFiltro) params.set("propiedad", propiedadFiltro);
-
-      const res = await fetch(`/api/dispositivos?${params.toString()}`);
+      const res = await fetch("/api/dispositivos");
       const data = await res.json();
       if (res.ok && Array.isArray(data.dispositivos)) {
-        setDispositivos(data.dispositivos);
+        setTodosDispositivos(data.dispositivos);
       }
     } catch (error) {
       console.error("Error cargando dispositivos:", error);
     } finally {
       setLoading(false);
     }
-  }, [q, tipoFiltro, propiedadFiltro]);
+  }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      cargarRegistros();
-    }, 200);
-    return () => clearTimeout(timer);
+    cargarRegistros();
   }, [cargarRegistros]);
+
+  // Filtrado instantáneo en memoria (0ms de espera al escribir o cambiar filtros)
+  const dispositivos = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    return todosDispositivos.filter((d) => {
+      if (tipoFiltro && d.tipoEquipo !== tipoFiltro) return false;
+      if (propiedadFiltro && (d.propiedad || "Corporativo") !== propiedadFiltro)
+        return false;
+      if (!term) return true;
+      return (
+        d.codigoInventario?.toLowerCase().includes(term) ||
+        d.marcaModelo?.toLowerCase().includes(term) ||
+        d.serial?.toLowerCase().includes(term) ||
+        d.especificaciones?.toLowerCase().includes(term) ||
+        d.macAddress?.toLowerCase().includes(term) ||
+        d.imei1?.toLowerCase().includes(term) ||
+        d.imei2?.toLowerCase().includes(term) ||
+        d.trabajador.nombre.toLowerCase().includes(term) ||
+        d.trabajador.cedula.toLowerCase().includes(term) ||
+        d.trabajador.departamento.toLowerCase().includes(term) ||
+        d.trabajador.empresa.toLowerCase().includes(term)
+      );
+    });
+  }, [todosDispositivos, q, tipoFiltro, propiedadFiltro]);
 
   // Abrir modal de edición con los datos actuales del dispositivo
   const handleOpenEdit = (d: DispositivoConTrabajador) => {
@@ -148,8 +164,10 @@ export default function RegistrosPage() {
       if (!res.ok) {
         throw new Error(data.error || "No se pudo actualizar el registro.");
       }
+      setTodosDispositivos((prev) =>
+        prev.map((item) => (item.id === editingDevice.id ? data : item))
+      );
       setEditingDevice(null);
-      await cargarRegistros();
     } catch (error: unknown) {
       alert(
         error instanceof Error
@@ -176,7 +194,7 @@ export default function RegistrosPage() {
         method: "DELETE",
       });
       if (res.ok) {
-        await cargarRegistros();
+        setTodosDispositivos((prev) => prev.filter((item) => item.id !== d.id));
       }
     } catch (error) {
       console.error("Error eliminando registro:", error);

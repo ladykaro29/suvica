@@ -231,9 +231,28 @@ export async function POST(req: NextRequest) {
         throw new Error("Modo vista previa local");
       }
 
-      const trabajadorExiste = await prisma.trabajador.findUnique({
+      let trabajadorExiste = await prisma.trabajador.findUnique({
         where: { id: trabajadorId },
       });
+
+      if (!trabajadorExiste) {
+        const fallbackMatch = trabajadoresFallback.find(
+          (t) => t.id === trabajadorId || t.cedula === body?.trabajadorCedula
+        );
+        if (fallbackMatch) {
+          trabajadorExiste = await prisma.trabajador.upsert({
+            where: { cedula: fallbackMatch.cedula },
+            update: {},
+            create: {
+              cedula: fallbackMatch.cedula,
+              nombre: fallbackMatch.nombre,
+              cargo: fallbackMatch.cargo,
+              departamento: fallbackMatch.departamento,
+              empresa: fallbackMatch.empresa,
+            },
+          });
+        }
+      }
 
       if (!trabajadorExiste) {
         return NextResponse.json(
@@ -244,7 +263,7 @@ export async function POST(req: NextRequest) {
 
       const nuevoDispositivo = await prisma.dispositivo.create({
         data: {
-          trabajadorId,
+          trabajadorId: trabajadorExiste.id,
           codigoInventario: codigoInventario?.trim() || null,
           tipoEquipo: tipoFinal,
           propiedad: propiedadFinal,
