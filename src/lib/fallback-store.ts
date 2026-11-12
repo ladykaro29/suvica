@@ -12,6 +12,8 @@ export interface DispositivoDemo {
   codigoInventario: string | null;
   tipoEquipo: "Laptop" | "Celular" | "Radio" | "Otro";
   marcaModelo: string | null;
+  serial: string | null;
+  especificaciones: string | null;
   macAddress: string | null;
   imei1: string | null;
   imei2: string | null;
@@ -100,6 +102,8 @@ export const dispositivosFallback: DispositivoDemo[] =
       codigoInventario: "SUV-CEL-0104",
       tipoEquipo: "Celular",
       marcaModelo: "Samsung Galaxy A54 5G",
+      serial: "R58W40ABCDE",
+      especificaciones: "Dual SIM • 256GB / 8GB RAM • Modelo SM-A546E/DS",
       macAddress: "A4:77:33:8E:12:9C",
       imei1: "354891104523891",
       imei2: "354891104523899",
@@ -109,9 +113,25 @@ export const dispositivosFallback: DispositivoDemo[] =
     },
     {
       id: "dev-demo-2",
+      codigoInventario: "SUV-LAP-0018",
+      tipoEquipo: "Laptop",
+      marcaModelo: "Dell Latitude 5430",
+      serial: "8H2K9P3",
+      especificaciones: "Intel Core i5 vPro • 16GB RAM • 512GB NVMe • 19.5V 65W",
+      macAddress: "B8:85:84:12:4A:90",
+      imei1: null,
+      imei2: null,
+      trabajadorId: "demo-1",
+      createdAt: new Date().toISOString(),
+      trabajador: trabajadoresFallback[0],
+    },
+    {
+      id: "dev-demo-3",
       codigoInventario: "SUV-RAD-0021",
       tipoEquipo: "Radio",
       marcaModelo: "Motorola MOTOTRBO R7",
+      serial: "871TZN1492",
+      especificaciones: "Banda UHF 400-527 MHz • 4W • Digital DMR",
       macAddress: "00:1B:63:84:45:E6",
       imei1: null,
       imei2: null,
@@ -123,4 +143,3 @@ export const dispositivosFallback: DispositivoDemo[] =
 
 globalFallback.trabajadoresDemo = trabajadoresFallback;
 globalFallback.dispositivosDemo = dispositivosFallback;
-

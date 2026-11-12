@@ -27,6 +27,8 @@ export async function GET(req: NextRequest) {
       codigoInventario: string | null;
       tipoEquipo: string;
       marcaModelo: string | null;
+      serial: string | null;
+      especificaciones: string | null;
       macAddress: string | null;
       imei1: string | null;
       imei2: string | null;
@@ -56,6 +58,8 @@ export async function GET(req: NextRequest) {
                 OR: [
                   { codigoInventario: { contains: q, mode: "insensitive" } },
                   { marcaModelo: { contains: q, mode: "insensitive" } },
+                  { serial: { contains: q, mode: "insensitive" } },
+                  { especificaciones: { contains: q, mode: "insensitive" } },
                   { macAddress: { contains: q, mode: "insensitive" } },
                   { imei1: { contains: q, mode: "insensitive" } },
                   { imei2: { contains: q, mode: "insensitive" } },
@@ -88,6 +92,8 @@ export async function GET(req: NextRequest) {
         return (
           d.codigoInventario?.toLowerCase().includes(term) ||
           d.marcaModelo?.toLowerCase().includes(term) ||
+          d.serial?.toLowerCase().includes(term) ||
+          d.especificaciones?.toLowerCase().includes(term) ||
           d.macAddress?.toLowerCase().includes(term) ||
           d.imei1?.toLowerCase().includes(term) ||
           d.imei2?.toLowerCase().includes(term) ||
@@ -99,39 +105,54 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Contar cuántos dispositivos en total maneja cada trabajador en este listado
+    const conteoPorTrabajador = new Map<string, number>();
+    for (const d of dispositivos) {
+      conteoPorTrabajador.set(
+        d.trabajador.id,
+        (conteoPorTrabajador.get(d.trabajador.id) || 0) + 1
+      );
+    }
+
     // Exportación directa a CSV compatible con Excel (UTF-8 con BOM)
     if (format === "csv" || format === "excel") {
       const separator = format === "excel" ? ";" : ",";
       const headers = [
         "ID Registro",
         "Fecha Escaneo",
-        "Código Inventario",
-        "Tipo de Equipo",
-        "Marca / Modelo",
-        "MAC Address",
-        "IMEI 1",
-        "IMEI 2",
         "Cédula Trabajador",
         "Nombre Trabajador",
         "Cargo",
         "Departamento",
         "Empresa",
+        "Total Equipos del Trabajador",
+        "Tipo de Equipo",
+        "Código Inventario",
+        "Marca / Modelo",
+        "Serial (S/N)",
+        "Especificaciones / Detalles",
+        "MAC Address",
+        "IMEI 1",
+        "IMEI 2",
       ];
 
       const rows = dispositivos.map((d) => [
         escapeCsvField(d.id),
         escapeCsvField(new Date(d.createdAt).toLocaleString("es-VE")),
-        escapeCsvField(d.codigoInventario),
-        escapeCsvField(d.tipoEquipo),
-        escapeCsvField(d.marcaModelo),
-        escapeCsvField(d.macAddress),
-        escapeCsvField(d.imei1 ? `'${d.imei1}` : ""),
-        escapeCsvField(d.imei2 ? `'${d.imei2}` : ""),
         escapeCsvField(d.trabajador.cedula),
         escapeCsvField(d.trabajador.nombre),
         escapeCsvField(d.trabajador.cargo),
         escapeCsvField(d.trabajador.departamento),
         escapeCsvField(d.trabajador.empresa),
+        escapeCsvField(String(conteoPorTrabajador.get(d.trabajador.id) || 1)),
+        escapeCsvField(d.tipoEquipo),
+        escapeCsvField(d.codigoInventario),
+        escapeCsvField(d.marcaModelo),
+        escapeCsvField(d.serial),
+        escapeCsvField(d.especificaciones),
+        escapeCsvField(d.macAddress),
+        escapeCsvField(d.imei1 ? `'${d.imei1}` : ""),
+        escapeCsvField(d.imei2 ? `'${d.imei2}` : ""),
       ]);
 
       const csvContent =
@@ -171,6 +192,8 @@ export async function POST(req: NextRequest) {
       codigoInventario,
       tipoEquipo,
       marcaModelo,
+      serial,
+      especificaciones,
       macAddress,
       imei1,
       imei2,
@@ -187,6 +210,9 @@ export async function POST(req: NextRequest) {
     const tipoFinal: TipoEquipo = tiposValidos.includes(tipoEquipo)
       ? tipoEquipo
       : "Otro";
+
+    // Solo guardar IMEI si es Celular
+    const esCelular = tipoFinal === "Celular";
 
     try {
       if (!process.env.DATABASE_URL) {
@@ -210,9 +236,11 @@ export async function POST(req: NextRequest) {
           codigoInventario: codigoInventario?.trim() || null,
           tipoEquipo: tipoFinal,
           marcaModelo: marcaModelo?.trim() || null,
+          serial: serial?.trim()?.toUpperCase() || null,
+          especificaciones: especificaciones?.trim() || null,
           macAddress: macAddress?.trim()?.toUpperCase() || null,
-          imei1: imei1?.trim() || null,
-          imei2: imei2?.trim() || null,
+          imei1: esCelular ? imei1?.trim() || null : null,
+          imei2: esCelular ? imei2?.trim() || null : null,
         },
         include: {
           trabajador: true,
@@ -229,9 +257,11 @@ export async function POST(req: NextRequest) {
         codigoInventario: codigoInventario?.trim() || null,
         tipoEquipo: tipoFinal,
         marcaModelo: marcaModelo?.trim() || null,
+        serial: serial?.trim()?.toUpperCase() || null,
+        especificaciones: especificaciones?.trim() || null,
         macAddress: macAddress?.trim()?.toUpperCase() || null,
-        imei1: imei1?.trim() || null,
-        imei2: imei2?.trim() || null,
+        imei1: esCelular ? imei1?.trim() || null : null,
+        imei2: esCelular ? imei2?.trim() || null : null,
         trabajadorId: trabajador.id,
         createdAt: new Date().toISOString(),
         trabajador,

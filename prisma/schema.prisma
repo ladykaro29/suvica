@@ -32,6 +32,8 @@ model Dispositivo {
   codigoInventario String?
   tipoEquipo       TipoEquipo
   marcaModelo      String?
+  serial           String?
+  especificaciones String?
   macAddress       String?
   imei1            String?
   imei2            String?
@@ -43,4 +45,3 @@ model Dispositivo {
   @@index([tipoEquipo])
   @@index([createdAt])
 }
-

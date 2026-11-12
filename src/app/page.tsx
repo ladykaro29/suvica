@@ -21,8 +21,26 @@ import {
   Briefcase,
   X,
   ArrowRight,
+  Layers,
+  Hash,
+  FileText,
 } from "lucide-react";
 import { compressImageClient } from "@/lib/image-compression";
+
+type TipoEquipo = "Laptop" | "Celular" | "Radio" | "Otro";
+
+export interface DispositivoResumen {
+  id: string;
+  codigoInventario: string | null;
+  tipoEquipo: TipoEquipo;
+  marcaModelo: string | null;
+  serial: string | null;
+  especificaciones: string | null;
+  macAddress: string | null;
+  imei1: string | null;
+  imei2: string | null;
+  createdAt: string;
+}
 
 export interface Trabajador {
   id: string;
@@ -31,12 +49,11 @@ export interface Trabajador {
   cargo: string;
   departamento: string;
   empresa: string;
+  dispositivos?: DispositivoResumen[];
   _count?: {
     dispositivos: number;
   };
 }
-
-type TipoEquipo = "Laptop" | "Celular" | "Radio" | "Otro";
 
 export default function CapturaInventarioPage() {
   // Estado de trabajadores y buscador autocompletable
@@ -68,10 +85,12 @@ export default function CapturaInventarioPage() {
   } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
 
-  // Estado del formulario de dispositivo
+  // Estado del formulario de dispositivo (adaptable por tipo)
+  const [tipoEquipo, setTipoEquipo] = useState<TipoEquipo>("Laptop");
   const [codigoInventario, setCodigoInventario] = useState("");
-  const [tipoEquipo, setTipoEquipo] = useState<TipoEquipo>("Celular");
   const [marcaModelo, setMarcaModelo] = useState("");
+  const [serial, setSerial] = useState("");
+  const [especificaciones, setEspecificaciones] = useState("");
   const [macAddress, setMacAddress] = useState("");
   const [imei1, setImei1] = useState("");
   const [imei2, setImei2] = useState("");
@@ -83,14 +102,22 @@ export default function CapturaInventarioPage() {
     text: string;
   } | null>(null);
 
-  // Cargar trabajadores al montar la vista
-  const fetchTrabajadores = async () => {
+  // Cargar trabajadores (incluyendo su conteo y lista de dispositivos)
+  const fetchTrabajadores = async (keepSelectedId?: string) => {
     try {
       setLoadingTrabajadores(true);
       const res = await fetch("/api/trabajadores");
       const data = await res.json();
       if (res.ok && Array.isArray(data.trabajadores)) {
         setTrabajadores(data.trabajadores);
+        if (keepSelectedId) {
+          const updated = data.trabajadores.find(
+            (t: Trabajador) => t.id === keepSelectedId
+          );
+          if (updated) {
+            setSelectedTrabajador(updated);
+          }
+        }
       }
     } catch (error) {
       console.error("Error cargando trabajadores:", error);
@@ -131,6 +158,15 @@ export default function CapturaInventarioPage() {
     setDropdownOpen(true);
   };
 
+  // Cambiar tipo de equipo manualmente (limpia IMEI si cambia a un equipo sin IMEI)
+  const handleSelectTipoEquipo = (nuevoTipo: TipoEquipo) => {
+    setTipoEquipo(nuevoTipo);
+    if (nuevoTipo !== "Celular") {
+      setImei1("");
+      setImei2("");
+    }
+  };
+
   // Manejar captura de cámara, compresión cliente a máx 1200px JPEG 0.8 y envío a Gemini
   const handleCapturePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -164,24 +200,36 @@ export default function CapturaInventarioPage() {
         );
       }
 
-      // 3. Rellenar formulario con los campos extraídos por Gemini 2.5 Flash
-      if (
+      // 3. Rellenar formulario adaptando los campos al tipo de equipo detectado
+      const detectedType: TipoEquipo =
         data.tipoEquipo &&
         ["Laptop", "Celular", "Radio", "Otro"].includes(data.tipoEquipo)
-      ) {
-        setTipoEquipo(data.tipoEquipo as TipoEquipo);
-      }
+          ? (data.tipoEquipo as TipoEquipo)
+          : tipoEquipo;
+
+      setTipoEquipo(detectedType);
       setMarcaModelo(data.marcaModelo ?? "");
+      setSerial(data.serial ?? "");
+      setEspecificaciones(data.especificaciones ?? "");
       setMacAddress(data.macAddress ?? "");
-      setImei1(data.imei1 ?? "");
-      setImei2(data.imei2 ?? "");
+
+      if (detectedType === "Celular") {
+        setImei1(data.imei1 ?? "");
+        setImei2(data.imei2 ?? "");
+      } else {
+        setImei1("");
+        setImei2("");
+      }
+
       if (data.codigoInventario) {
         setCodigoInventario(data.codigoInventario);
       }
 
       setStatusMessage({
         type: "info",
-        text: "Datos extraídos con IA. Verifica los campos antes de guardar.",
+        text: `IA detectó: ${detectedType}${
+          data.marcaModelo ? ` (${data.marcaModelo})` : ""
+        }. Verifica los campos antes de guardar.`,
       });
     } catch (err: unknown) {
       const msg =
@@ -205,6 +253,8 @@ export default function CapturaInventarioPage() {
     setImageMeta(null);
     setCodigoInventario("");
     setMarcaModelo("");
+    setSerial("");
+    setEspecificaciones("");
     setMacAddress("");
     setImei1("");
     setImei2("");
@@ -216,7 +266,7 @@ export default function CapturaInventarioPage() {
     if (!selectedTrabajador) {
       setStatusMessage({
         type: "error",
-        text: "Primero debes seleccionar un trabajador responsable.",
+        text: "Primero debes seleccionar al trabajador en el Paso 1.",
       });
       return;
     }
@@ -233,9 +283,11 @@ export default function CapturaInventarioPage() {
           codigoInventario,
           tipoEquipo,
           marcaModelo,
+          serial,
+          especificaciones,
           macAddress,
-          imei1,
-          imei2,
+          imei1: tipoEquipo === "Celular" ? imei1 : null,
+          imei2: tipoEquipo === "Celular" ? imei2 : null,
         }),
       });
 
@@ -245,13 +297,14 @@ export default function CapturaInventarioPage() {
       }
 
       resetDeviceForm();
+      await fetchTrabajadores(selectedTrabajador.id);
+
       setStatusMessage({
         type: "success",
         text: `Equipo (${data.tipoEquipo} ${
           data.marcaModelo || ""
-        }) guardado para ${selectedTrabajador.nombre}. Puedes escanear otro equipo o cambiar de trabajador.`,
+        }) guardado para ${selectedTrabajador.nombre}. Si esta persona maneja otro dispositivo adicional, puedes escanearlo enseguida.`,
       });
-      fetchTrabajadores();
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "No se pudo guardar el registro.";
@@ -278,7 +331,7 @@ export default function CapturaInventarioPage() {
       if (!res.ok) {
         throw new Error(data.error || "Error registrando trabajador");
       }
-      await fetchTrabajadores();
+      await fetchTrabajadores(data.id);
       handleSelectTrabajador(data);
       setShowNewWorkerModal(false);
       setNewWorker({
@@ -297,16 +350,82 @@ export default function CapturaInventarioPage() {
     }
   };
 
+  // Conteo y desglose de dispositivos que maneja el trabajador seleccionado
+  const dispositivosTrabajador = selectedTrabajador?.dispositivos || [];
+  const totalEquiposTrabajador =
+    selectedTrabajador?._count?.dispositivos ?? dispositivosTrabajador.length;
+
+  const resumenPorTipo = useMemo(() => {
+    const counts = { Laptop: 0, Celular: 0, Radio: 0, Otro: 0 };
+    for (const d of dispositivosTrabajador) {
+      if (counts[d.tipoEquipo] !== undefined) {
+        counts[d.tipoEquipo]++;
+      }
+    }
+    return counts;
+  }, [dispositivosTrabajador]);
+
+  // Textos dinámicos según el tipo de equipo seleccionado
+  const configCampos = useMemo(() => {
+    switch (tipoEquipo) {
+      case "Laptop":
+        return {
+          tituloSeccion: "Datos de la Laptop (Sin IMEI)",
+          placeholderModelo: "Ej. Lenovo ThinkPad T14 / Dell Latitude 5430",
+          labelSerial: "Número de Serie / Service Tag (S/N) *",
+          placeholderSerial: "Ej. PF3XYZ12 / 8H2K9P3",
+          labelSpecs: "Especificaciones (Procesador, RAM, Disco, Cargador)",
+          placeholderSpecs:
+            "Ej. Intel Core i5, 16GB RAM, 512GB SSD, Cargador 65W",
+          labelMac: "Dirección MAC Wi-Fi / Ethernet (XX:XX:XX:XX:XX:XX)",
+          mostrarImei: false,
+        };
+      case "Celular":
+        return {
+          tituloSeccion: "Datos del Teléfono Celular (Con IMEI)",
+          placeholderModelo: "Ej. Samsung Galaxy A54 5G / Xiaomi Redmi Note 13",
+          labelSerial: "Número de Serie (S/N)",
+          placeholderSerial: "Ej. R58W40ABCDE (Opcional)",
+          labelSpecs: "Características (Capacidad GB, RAM, Modelo Técnico, Línea)",
+          placeholderSpecs: "Ej. 256GB / 8GB RAM • SM-A546E/DS • Corporativo",
+          labelMac: "Dirección MAC Wi-Fi / Bluetooth (XX:XX:XX:XX:XX:XX)",
+          mostrarImei: true,
+        };
+      case "Radio":
+        return {
+          tituloSeccion: "Datos del Radio Portátil / Comunicaciones (Sin IMEI)",
+          placeholderModelo: "Ej. Motorola MOTOTRBO R7 / DEP450 / Hytera",
+          labelSerial: "Número de Serie del Radio (S/N) *",
+          placeholderSerial: "Ej. 871TZN1492",
+          labelSpecs: "Banda (UHF/VHF), Frecuencia, ID Digital o Batería",
+          placeholderSpecs: "Ej. UHF 400-527 MHz • 4W • Con cargador y antena",
+          labelMac: "Dirección MAC / ID Bluetooth (Si aplica)",
+          mostrarImei: false,
+        };
+      default:
+        return {
+          tituloSeccion: "Datos del Equipo / Otro Activo (Sin IMEI)",
+          placeholderModelo: "Ej. Monitor Dell 24\" / Impresora Epson / Tablet",
+          labelSerial: "Número de Serie (S/N)",
+          placeholderSerial: "Ej. CN-0ABC123-742",
+          labelSpecs: "Especificaciones Técnicas / Estado / Accesorios",
+          placeholderSpecs: "Ej. Resolución FHD, incluye cable de poder",
+          labelMac: "Dirección MAC (Si tiene tarjeta de red)",
+          mostrarImei: false,
+        };
+    }
+  }, [tipoEquipo]);
+
   return (
     <div className="space-y-4">
-      {/* PASO 1: Selección de Trabajador con Autocompletado */}
+      {/* PASO 1: Selección de Trabajador y Cantidad de Dispositivos que Maneja */}
       <section className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80">
         <div className="flex items-center justify-between mb-2.5">
           <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
             <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[11px]">
               1
             </span>
-            Trabajador Asignado
+            Trabajador y Cantidad de Equipos
           </label>
           <button
             type="button"
@@ -350,12 +469,12 @@ export default function CapturaInventarioPage() {
             )}
           </div>
 
-          {/* Lista desplegable de sugerencias */}
+          {/* Lista desplegable de sugerencias mostrando cuántos equipos maneja cada persona */}
           {dropdownOpen && !selectedTrabajador && (
             <div className="absolute z-20 mt-1.5 w-full bg-white rounded-xl shadow-xl border border-slate-200 max-h-64 overflow-y-auto divide-y divide-slate-100">
               {filteredTrabajadores.length === 0 ? (
                 <div className="p-3.5 text-center text-xs text-slate-500 space-y-2">
-                  <p>No se encontraron trabajadores con "{searchQuery}".</p>
+                  <p>No se encontraron trabajadores con &quot;{searchQuery}&quot;.</p>
                   <button
                     type="button"
                     onClick={() => {
@@ -369,69 +488,161 @@ export default function CapturaInventarioPage() {
                   </button>
                 </div>
               ) : (
-                filteredTrabajadores.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => handleSelectTrabajador(t)}
-                    className="w-full text-left px-3.5 py-2.5 hover:bg-blue-50/70 active:bg-blue-100/60 transition flex items-center justify-between gap-2"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">
-                        {t.nombre}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        <span className="font-mono font-semibold text-slate-700">
-                          {t.cedula}
-                        </span>{" "}
-                        • {t.cargo}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <span className="inline-block text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md">
-                        {t.empresa}
-                      </span>
-                      <p className="text-[11px] text-blue-600 font-medium mt-0.5">
-                        {t.departamento}
-                      </p>
-                    </div>
-                  </button>
-                ))
+                filteredTrabajadores.map((t) => {
+                  const cant =
+                    t._count?.dispositivos ?? t.dispositivos?.length ?? 0;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => handleSelectTrabajador(t)}
+                      className="w-full text-left px-3.5 py-2.5 hover:bg-blue-50/70 active:bg-blue-100/60 transition flex items-center justify-between gap-2"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {t.nombre}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          <span className="font-mono font-semibold text-slate-700">
+                            {t.cedula}
+                          </span>{" "}
+                          • {t.cargo}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0 space-y-0.5">
+                        <span
+                          className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            cant > 0
+                              ? "bg-blue-100 text-blue-800"
+                              : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          <Layers className="w-3 h-3" />
+                          {cant} {cant === 1 ? "equipo" : "equipos"}
+                        </span>
+                        <p className="text-[11px] text-slate-500 font-medium">
+                          {t.empresa} • {t.departamento}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })
               )}
             </div>
           )}
         </div>
 
-        {/* Tarjeta resumen del trabajador seleccionado */}
+        {/* Tarjeta resumen del trabajador seleccionado + Cantidad y Lista de Dispositivos que maneja */}
         {selectedTrabajador && (
-          <div className="mt-3 bg-blue-50/80 border border-blue-200 rounded-xl p-3 flex items-start justify-between gap-2">
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5 text-blue-900 font-bold text-sm">
-                <UserCheck className="w-4 h-4 text-blue-600 shrink-0" />
-                <span>{selectedTrabajador.nombre}</span>
+          <div className="mt-3 bg-blue-50/70 border border-blue-200 rounded-xl p-3.5 space-y-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 text-blue-950 font-bold text-sm">
+                  <UserCheck className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>{selectedTrabajador.nombre}</span>
+                </div>
+                <p className="text-xs text-slate-600 font-mono">
+                  C.I: <strong>{selectedTrabajador.cedula}</strong> •{" "}
+                  {selectedTrabajador.cargo}
+                </p>
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-slate-700 px-2 py-0.5 rounded-md border border-slate-200">
+                    <Building2 className="w-3 h-3 text-blue-600" />
+                    {selectedTrabajador.empresa}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-slate-700 px-2 py-0.5 rounded-md border border-slate-200">
+                    <Briefcase className="w-3 h-3 text-indigo-600" />
+                    {selectedTrabajador.departamento}
+                  </span>
+                </div>
               </div>
-              <p className="text-xs text-slate-600 font-mono">
-                C.I: <strong>{selectedTrabajador.cedula}</strong> •{" "}
-                {selectedTrabajador.cargo}
-              </p>
-              <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-slate-700 px-2 py-0.5 rounded-md border border-slate-200">
-                  <Building2 className="w-3 h-3 text-blue-600" />
-                  {selectedTrabajador.empresa}
-                </span>
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-slate-700 px-2 py-0.5 rounded-md border border-slate-200">
-                  <Briefcase className="w-3 h-3 text-indigo-600" />
-                  {selectedTrabajador.departamento}
-                </span>
-              </div>
+              <button
+                type="button"
+                onClick={handleClearTrabajador}
+                className="text-[11px] text-blue-700 hover:underline font-semibold shrink-0"
+              >
+                Cambiar
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={handleClearTrabajador}
-              className="text-[11px] text-blue-700 hover:underline font-semibold shrink-0"
-            >
-              Cambiar
-            </button>
+
+            {/* Contador de dispositivos que maneja esta persona */}
+            <div className="bg-white rounded-xl p-3 border border-blue-200/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-blue-600" />
+                  Dispositivos que maneja esta persona:
+                </span>
+                <span className="text-xs font-extrabold bg-blue-600 text-white px-2.5 py-0.5 rounded-full">
+                  {totalEquiposTrabajador}{" "}
+                  {totalEquiposTrabajador === 1 ? "registrado" : "registrados"}
+                </span>
+              </div>
+
+              {/* Desglose por tipo */}
+              <div className="grid grid-cols-4 gap-1.5 text-center pt-0.5">
+                <div className="bg-slate-50 rounded-lg py-1.5 px-1 border border-slate-200/70">
+                  <p className="text-xs font-bold text-slate-900">
+                    {resumenPorTipo.Laptop}
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    Laptops
+                  </p>
+                </div>
+                <div className="bg-slate-50 rounded-lg py-1.5 px-1 border border-slate-200/70">
+                  <p className="text-xs font-bold text-slate-900">
+                    {resumenPorTipo.Celular}
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    Celulares
+                  </p>
+                </div>
+                <div className="bg-slate-50 rounded-lg py-1.5 px-1 border border-slate-200/70">
+                  <p className="text-xs font-bold text-slate-900">
+                    {resumenPorTipo.Radio}
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    Radios
+                  </p>
+                </div>
+                <div className="bg-slate-50 rounded-lg py-1.5 px-1 border border-slate-200/70">
+                  <p className="text-xs font-bold text-slate-900">
+                    {resumenPorTipo.Otro}
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    Otros
+                  </p>
+                </div>
+              </div>
+
+              {/* Lista compacta de los equipos ya escaneados de este trabajador */}
+              {dispositivosTrabajador.length > 0 && (
+                <div className="pt-1.5 border-t border-slate-100 space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Equipos ya registrados a {selectedTrabajador.nombre}:
+                  </p>
+                  <div className="space-y-1 max-h-28 overflow-y-auto">
+                    {dispositivosTrabajador.map((d, idx) => (
+                      <div
+                        key={d.id}
+                        className="text-[11px] bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200/70 flex items-center justify-between gap-2"
+                      >
+                        <span className="font-semibold text-slate-800 truncate">
+                          {idx + 1}. [{d.tipoEquipo}]{" "}
+                          {d.marcaModelo || "Sin modelo"}
+                        </span>
+                        <span className="font-mono text-[10px] text-slate-500 shrink-0">
+                          {d.tipoEquipo === "Celular" && d.imei1
+                            ? `IMEI: ${d.imei1}`
+                            : d.serial
+                            ? `S/N: ${d.serial}`
+                            : d.macAddress || ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </section>
@@ -443,7 +654,10 @@ export default function CapturaInventarioPage() {
             <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[11px]">
               2
             </span>
-            Escaneo Fotográfico con IA
+            Escaneo Fotográfico con IA{" "}
+            {selectedTrabajador
+              ? `(Equipo #${totalEquiposTrabajador + 1})`
+              : ""}
           </label>
           {imageMeta && (
             <span className="text-[11px] text-slate-500 font-mono">
@@ -472,10 +686,11 @@ export default function CapturaInventarioPage() {
             <>
               <Loader2 className="w-9 h-9 animate-spin text-blue-200" />
               <span className="text-base font-bold">
-                Analizando etiqueta con Gemini 2.5 Flash...
+                Analizando fotografía con Gemini IA...
               </span>
-              <span className="text-xs text-blue-200">
-                Extrayendo MAC, IMEI, Marca y Modelo automáticamente
+              <span className="text-xs text-blue-200 text-center">
+                Detectando tipo de equipo, Marca, Modelo, Serial, MAC, IMEI y
+                especificaciones
               </span>
             </>
           ) : (
@@ -489,8 +704,8 @@ export default function CapturaInventarioPage() {
                   : "Abrir Cámara y Escanear Equipo"}
               </span>
               <span className="text-xs text-blue-100 text-center max-w-xs">
-                Fotografía la etiqueta trasera, pantalla *#06# o serial. Se
-                comprime a 1200px JPEG automáticamente.
+                Fotografía la etiqueta de la Laptop, Radio o pantalla *#06# del
+                Celular. La IA adaptará los campos automáticamente.
               </span>
             </>
           )}
@@ -544,7 +759,7 @@ export default function CapturaInventarioPage() {
                 href="/registros"
                 className="inline-flex items-center gap-1 mt-1.5 font-bold text-emerald-700 underline"
               >
-                Ver tabla de equipos registrados{" "}
+                Ver tabla general de equipos registrados{" "}
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             )}
@@ -552,7 +767,7 @@ export default function CapturaInventarioPage() {
         </div>
       )}
 
-      {/* PASO 3: Formulario de Verificación Rápida y Guardado */}
+      {/* PASO 3: Formulario Inteligente adaptado a cada Tipo de Dispositivo */}
       <form
         onSubmit={handleSaveDevice}
         className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-3.5"
@@ -562,7 +777,7 @@ export default function CapturaInventarioPage() {
             <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[11px]">
               3
             </span>
-            Datos del Dispositivo (Editables)
+            {configCampos.tituloSeccion}
           </label>
           <button
             type="button"
@@ -577,7 +792,7 @@ export default function CapturaInventarioPage() {
         {/* Selector visual de Tipo de Equipo */}
         <div>
           <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-            Tipo de Equipo *
+            Categoría del Dispositivo *
           </label>
           <div className="grid grid-cols-4 gap-2">
             {(
@@ -593,7 +808,7 @@ export default function CapturaInventarioPage() {
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setTipoEquipo(id)}
+                  onClick={() => handleSelectTipoEquipo(id)}
                   className={`py-2.5 px-2 rounded-xl border text-xs font-semibold flex flex-col items-center gap-1 transition ${
                     active
                       ? "bg-blue-600 text-white border-blue-600 shadow-sm"
@@ -608,8 +823,21 @@ export default function CapturaInventarioPage() {
           </div>
         </div>
 
-        {/* Código de Inventario y Marca/Modelo */}
+        {/* Marca/Modelo y Código de Inventario */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Marca y Modelo *
+            </label>
+            <input
+              type="text"
+              value={marcaModelo}
+              onChange={(e) => setMarcaModelo(e.target.value)}
+              placeholder={configCampos.placeholderModelo}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-sm focus:bg-white focus:border-blue-600 outline-none"
+            />
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Código de Inventario / Activo
@@ -618,70 +846,89 @@ export default function CapturaInventarioPage() {
               type="text"
               value={codigoInventario}
               onChange={(e) => setCodigoInventario(e.target.value)}
-              placeholder="Ej. SUV-LAP-0042 (Opcional)"
+              placeholder="Ej. SUV-0042 (Si tiene etiqueta)"
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-sm font-mono focus:bg-white focus:border-blue-600 outline-none"
             />
           </div>
+        </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Marca y Modelo
-            </label>
-            <input
-              type="text"
-              value={marcaModelo}
-              onChange={(e) => setMarcaModelo(e.target.value)}
-              placeholder="Ej. Dell Latitude 5420 / Samsung A54"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-sm focus:bg-white focus:border-blue-600 outline-none"
-            />
+        {/* Número de Serie (S/N o Service Tag) — Clave para Laptops, Radios y Celulares */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+            <Hash className="w-3.5 h-3.5 text-blue-600" />
+            {configCampos.labelSerial}
+          </label>
+          <input
+            type="text"
+            value={serial}
+            onChange={(e) => setSerial(e.target.value.toUpperCase())}
+            placeholder={configCampos.placeholderSerial}
+            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-sm font-mono uppercase tracking-wider focus:bg-white focus:border-blue-600 outline-none"
+          />
+        </div>
+
+        {/* IMEI 1 e IMEI 2 — SOLO SE MUESTRAN CUANDO EL EQUIPO ES UN CELULAR */}
+        {configCampos.mostrarImei && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-blue-50/50 border border-blue-200/70">
+            <div>
+              <label className="block text-xs font-bold text-blue-900 mb-1">
+                IMEI 1 (15 dígitos) *
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={17}
+                value={imei1}
+                onChange={(e) => setImei1(e.target.value.replace(/\D/g, ""))}
+                placeholder="35XXXXXXXXXXXXX"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-blue-300 bg-white text-sm font-mono tracking-wider focus:border-blue-600 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-blue-900 mb-1">
+                IMEI 2 (Dual SIM - 15 dígitos)
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={17}
+                value={imei2}
+                onChange={(e) => setImei2(e.target.value.replace(/\D/g, ""))}
+                placeholder="35XXXXXXXXXXXXX (Opcional)"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-blue-300 bg-white text-sm font-mono tracking-wider focus:border-blue-600 outline-none"
+              />
+            </div>
           </div>
+        )}
+
+        {/* Especificaciones propias del tipo de equipo (RAM/CPU en Laptop, Banda/Frecuencia en Radio, etc.) */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+            <FileText className="w-3.5 h-3.5 text-indigo-600" />
+            {configCampos.labelSpecs}
+          </label>
+          <input
+            type="text"
+            value={especificaciones}
+            onChange={(e) => setEspecificaciones(e.target.value)}
+            placeholder={configCampos.placeholderSpecs}
+            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-sm focus:bg-white focus:border-blue-600 outline-none"
+          />
         </div>
 
         {/* MAC Address */}
         <div>
           <label className="block text-xs font-semibold text-slate-700 mb-1">
-            Dirección MAC (XX:XX:XX:XX:XX:XX)
+            {configCampos.labelMac}
           </label>
           <input
             type="text"
             value={macAddress}
             onChange={(e) => setMacAddress(e.target.value.toUpperCase())}
-            placeholder="AA:BB:CC:DD:EE:FF"
+            placeholder="AA:BB:CC:DD:EE:FF (Opcional)"
             className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-sm font-mono uppercase tracking-wider focus:bg-white focus:border-blue-600 outline-none"
           />
-        </div>
-
-        {/* IMEI 1 e IMEI 2 */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              IMEI 1 (15 dígitos)
-            </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={17}
-              value={imei1}
-              onChange={(e) => setImei1(e.target.value.replace(/\D/g, ""))}
-              placeholder="35XXXXXXXXXXXXX"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-sm font-mono tracking-wider focus:bg-white focus:border-blue-600 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              IMEI 2 (Dual SIM - 15 dígitos)
-            </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={17}
-              value={imei2}
-              onChange={(e) => setImei2(e.target.value.replace(/\D/g, ""))}
-              placeholder="35XXXXXXXXXXXXX (Opcional)"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-sm font-mono tracking-wider focus:bg-white focus:border-blue-600 outline-none"
-            />
-          </div>
         </div>
 
         <button
@@ -692,12 +939,17 @@ export default function CapturaInventarioPage() {
           {savingDevice ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
-              <span>Guardando en PostgreSQL...</span>
+              <span>Guardando en Base de Datos...</span>
             </>
           ) : (
             <>
               <Save className="w-5 h-5" />
-              <span>Guardar Equipo</span>
+              <span>
+                Guardar {tipoEquipo}{" "}
+                {selectedTrabajador
+                  ? `de ${selectedTrabajador.nombre.split(" ")[0]}`
+                  : ""}
+              </span>
             </>
           )}
         </button>
@@ -826,4 +1078,3 @@ export default function CapturaInventarioPage() {
     </div>
   );
 }
-

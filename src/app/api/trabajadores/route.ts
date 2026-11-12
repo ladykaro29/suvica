@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { trabajadoresFallback } from "@/lib/fallback-store";
+import {
+  trabajadoresFallback,
+  dispositivosFallback,
+} from "@/lib/fallback-store";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -43,6 +46,9 @@ export async function GET(req: NextRequest) {
           }
         : undefined,
       include: {
+        dispositivos: {
+          orderBy: { createdAt: "desc" },
+        },
         _count: {
           select: { dispositivos: true },
         },
@@ -55,16 +61,29 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ trabajadores });
   } catch {
-    // Fallback local en memoria si aún no hay conexión a PostgreSQL
-    const filtrados = q
-      ? trabajadoresFallback.filter(
-          (t) =>
-            t.nombre.toLowerCase().includes(q.toLowerCase()) ||
-            t.cedula.toLowerCase().includes(q.toLowerCase()) ||
-            t.departamento.toLowerCase().includes(q.toLowerCase()) ||
-            t.empresa.toLowerCase().includes(q.toLowerCase())
-        )
-      : trabajadoresFallback;
+    // Fallback local en memoria enriquecido con los dispositivos que maneja cada trabajador
+    const filtrados = (
+      q
+        ? trabajadoresFallback.filter(
+            (t) =>
+              t.nombre.toLowerCase().includes(q.toLowerCase()) ||
+              t.cedula.toLowerCase().includes(q.toLowerCase()) ||
+              t.departamento.toLowerCase().includes(q.toLowerCase()) ||
+              t.empresa.toLowerCase().includes(q.toLowerCase())
+          )
+        : trabajadoresFallback
+    ).map((t) => {
+      const misDispositivos = dispositivosFallback.filter(
+        (d) => d.trabajadorId === t.id
+      );
+      return {
+        ...t,
+        dispositivos: misDispositivos,
+        _count: {
+          dispositivos: misDispositivos.length,
+        },
+      };
+    });
 
     return NextResponse.json({ trabajadores: filtrados, mode: "local-preview" });
   }
@@ -105,6 +124,12 @@ export async function POST(req: NextRequest) {
           departamento: departamento.trim(),
           empresa: empresa.trim(),
         },
+        include: {
+          dispositivos: true,
+          _count: {
+            select: { dispositivos: true },
+          },
+        },
       });
 
       return NextResponse.json(trabajador, { status: 201 });
@@ -116,6 +141,8 @@ export async function POST(req: NextRequest) {
         cargo: cargo?.trim() || "Trabajador",
         departamento: departamento.trim(),
         empresa: empresa.trim(),
+        dispositivos: [],
+        _count: { dispositivos: 0 },
       };
       trabajadoresFallback.unshift(nuevo);
       return NextResponse.json(nuevo, { status: 201 });

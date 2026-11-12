@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Download,
   FileSpreadsheet,
@@ -13,6 +13,7 @@ import {
   User,
   Building2,
   Calendar,
+  Layers,
 } from "lucide-react";
 
 interface DispositivoConTrabajador {
@@ -20,6 +21,8 @@ interface DispositivoConTrabajador {
   codigoInventario: string | null;
   tipoEquipo: "Laptop" | "Celular" | "Radio" | "Otro";
   marcaModelo: string | null;
+  serial: string | null;
+  especificaciones: string | null;
   macAddress: string | null;
   imei1: string | null;
   imei2: string | null;
@@ -68,6 +71,15 @@ export default function RegistrosPage() {
     return () => clearTimeout(timer);
   }, [cargarRegistros]);
 
+  // Calcular cuántos dispositivos maneja cada trabajador
+  const conteoPorTrabajador = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const d of dispositivos) {
+      map.set(d.trabajador.id, (map.get(d.trabajador.id) || 0) + 1);
+    }
+    return map;
+  }, [dispositivos]);
+
   const getBadgeIcon = (tipo: string) => {
     switch (tipo) {
       case "Laptop":
@@ -91,7 +103,7 @@ export default function RegistrosPage() {
               Equipos Escaneados ({dispositivos.length})
             </h2>
             <p className="text-xs text-slate-500">
-              Consulta en tiempo real y descarga el reporte general
+              Incluye conteo por trabajador, Serial, MAC, IMEI y especificaciones
             </p>
           </div>
           <button
@@ -133,7 +145,7 @@ export default function RegistrosPage() {
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Filtrar por trabajador, cédula, MAC, IMEI o modelo..."
+            placeholder="Filtrar por trabajador, cédula, serial, MAC, IMEI o modelo..."
             className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-xs font-medium focus:bg-white focus:border-blue-600 outline-none"
           />
         </div>
@@ -170,81 +182,114 @@ export default function RegistrosPage() {
             No hay equipos registrados que coincidan con el filtro actual.
           </div>
         ) : (
-          dispositivos.map((d) => (
-            <article
-              key={d.id}
-              className="bg-white rounded-2xl p-4 shadow-xs border border-slate-200/90 space-y-2.5"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-md border border-blue-200">
-                    {getBadgeIcon(d.tipoEquipo)}
-                    {d.tipoEquipo}
-                  </span>
-                  <h3 className="text-sm font-bold text-slate-900 mt-1">
-                    {d.marcaModelo || "Marca / Modelo no especificado"}
-                  </h3>
+          dispositivos.map((d) => {
+            const totalDeEsteTrabajador =
+              conteoPorTrabajador.get(d.trabajador.id) || 1;
+            const esCelular = d.tipoEquipo === "Celular";
+
+            return (
+              <article
+                key={d.id}
+                className="bg-white rounded-2xl p-4 shadow-xs border border-slate-200/90 space-y-2.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-md border border-blue-200">
+                      {getBadgeIcon(d.tipoEquipo)}
+                      {d.tipoEquipo}
+                    </span>
+                    <h3 className="text-sm font-bold text-slate-900 mt-1">
+                      {d.marcaModelo || "Marca / Modelo no especificado"}
+                    </h3>
+                  </div>
+                  {d.codigoInventario && (
+                    <span className="text-[11px] font-mono font-bold bg-slate-100 text-slate-800 px-2.5 py-1 rounded-lg border border-slate-200">
+                      #{d.codigoInventario}
+                    </span>
+                  )}
                 </div>
-                {d.codigoInventario && (
-                  <span className="text-[11px] font-mono font-bold bg-slate-100 text-slate-800 px-2.5 py-1 rounded-lg border border-slate-200">
-                    #{d.codigoInventario}
-                  </span>
+
+                {/* Especificaciones particulares si existen */}
+                {d.especificaciones && (
+                  <p className="text-xs text-slate-600 bg-indigo-50/50 border border-indigo-100 px-3 py-1.5 rounded-lg">
+                    {d.especificaciones}
+                  </p>
                 )}
-              </div>
 
-              {/* Identificadores Técnicos (MAC / IMEIs) */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs font-mono">
-                <div>
-                  <span className="text-[10px] uppercase text-slate-400 block font-sans font-semibold">
-                    MAC Address
-                  </span>
-                  <span className="text-slate-800 font-semibold">
-                    {d.macAddress || "—"}
-                  </span>
+                {/* Identificadores Técnicos adaptados al Tipo de Equipo */}
+                <div
+                  className={`grid grid-cols-1 ${
+                    esCelular ? "sm:grid-cols-4" : "sm:grid-cols-2"
+                  } gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs font-mono`}
+                >
+                  <div>
+                    <span className="text-[10px] uppercase text-slate-400 block font-sans font-semibold">
+                      Serial (S/N)
+                    </span>
+                    <span className="text-slate-800 font-semibold">
+                      {d.serial || "—"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase text-slate-400 block font-sans font-semibold">
+                      MAC Address
+                    </span>
+                    <span className="text-slate-800 font-semibold">
+                      {d.macAddress || "—"}
+                    </span>
+                  </div>
+                  {esCelular && (
+                    <>
+                      <div>
+                        <span className="text-[10px] uppercase text-slate-400 block font-sans font-semibold">
+                          IMEI 1
+                        </span>
+                        <span className="text-slate-800 font-semibold">
+                          {d.imei1 || "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase text-slate-400 block font-sans font-semibold">
+                          IMEI 2
+                        </span>
+                        <span className="text-slate-800 font-semibold">
+                          {d.imei2 || "—"}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
-                <div>
-                  <span className="text-[10px] uppercase text-slate-400 block font-sans font-semibold">
-                    IMEI 1
-                  </span>
-                  <span className="text-slate-800 font-semibold">
-                    {d.imei1 || "—"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase text-slate-400 block font-sans font-semibold">
-                    IMEI 2
-                  </span>
-                  <span className="text-slate-800 font-semibold">
-                    {d.imei2 || "—"}
-                  </span>
-                </div>
-              </div>
 
-              {/* Datos del trabajador responsable */}
-              <div className="pt-1 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
-                <div className="flex items-center gap-1.5 font-medium text-slate-800">
-                  <User className="w-3.5 h-3.5 text-blue-600" />
-                  <span>{d.trabajador.nombre}</span>
-                  <span className="text-slate-400 font-mono">
-                    ({d.trabajador.cedula})
-                  </span>
+                {/* Datos del trabajador responsable y total de equipos que maneja */}
+                <div className="pt-1.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+                  <div className="flex flex-wrap items-center gap-1.5 font-medium text-slate-800">
+                    <User className="w-3.5 h-3.5 text-blue-600" />
+                    <span>{d.trabajador.nombre}</span>
+                    <span className="text-slate-400 font-mono">
+                      ({d.trabajador.cedula})
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                      <Layers className="w-2.5 h-2.5" />
+                      Maneja {totalDeEsteTrabajador}{" "}
+                      {totalDeEsteTrabajador === 1 ? "equipo" : "equipos"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                    <span className="inline-flex items-center gap-1">
+                      <Building2 className="w-3 h-3" />
+                      {d.trabajador.empresa} • {d.trabajador.departamento}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      {new Date(d.createdAt).toLocaleDateString("es-VE")}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                  <span className="inline-flex items-center gap-1">
-                    <Building2 className="w-3 h-3" />
-                    {d.trabajador.empresa} • {d.trabajador.departamento}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <Calendar className="w-3 h-3" />
-                    {new Date(d.createdAt).toLocaleDateString("es-VE")}
-                  </span>
-                </div>
-              </div>
-            </article>
-          ))
+              </article>
+            );
+          })
         )}
       </section>
     </div>
   );
 }
-
