@@ -111,38 +111,56 @@ Extrae con máxima precisión los siguientes datos:
 
 Regla estricta: Si alguno de los datos NO es visible o no aparece en la imagen, devuelve null en ese campo. No inventes valores.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: prompt },
+    // Lista de modelos con respaldo automático (usa primero gemini-3.8-flash requerido para cuentas nuevas de AI Studio)
+    const candidateModels = [
+      process.env.GEMINI_MODEL,
+      "gemini-3.8-flash",
+      "gemini-2.5-flash",
+    ].filter((m): m is string => Boolean(m));
+
+    let responseText: string | undefined;
+    let lastError: unknown;
+
+    for (const modelName of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: [
             {
-              inlineData: {
-                mimeType,
-                data: base64Data,
-              },
+              role: "user",
+              parts: [
+                { text: prompt },
+                {
+                  inlineData: {
+                    mimeType,
+                    data: base64Data,
+                  },
+                },
+              ],
             },
           ],
-        },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema,
-        temperature: 0.1,
-      },
-    });
+          config: {
+            responseMimeType: "application/json",
+            responseSchema,
+            temperature: 0.1,
+          },
+        });
 
-    const text = response.text;
-    if (!text) {
-      return NextResponse.json(
-        { error: "El modelo no devolvió respuesta para la imagen enviada." },
-        { status: 502 }
-      );
+        if (response.text) {
+          responseText = response.text;
+          break;
+        }
+      } catch (err: unknown) {
+        lastError = err;
+        console.warn(`Intento con modelo ${modelName} falló, probando siguiente...`, err);
+      }
     }
 
-    const parsed = JSON.parse(text);
+    if (!responseText) {
+      throw lastError || new Error("El modelo no devolvió respuesta para la imagen enviada.");
+    }
+
+    const parsed = JSON.parse(responseText);
 
     const resultado = {
       tipoEquipo: ["Laptop", "Celular", "Radio", "Otro"].includes(parsed.tipoEquipo)
@@ -172,4 +190,3 @@ Regla estricta: Si alguno de los datos NO es visible o no aparece en la imagen, 
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-
