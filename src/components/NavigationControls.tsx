@@ -3,7 +3,7 @@
 import React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Camera, ClipboardList, LogOut } from "lucide-react";
+import { Camera, ClipboardList, LogOut, ScanLine } from "lucide-react";
 
 export function HeaderUserBadge() {
   const pathname = usePathname();
@@ -45,7 +45,7 @@ export function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
-      <div className="max-w-lg mx-auto grid grid-cols-2 h-16">
+      <div className="max-w-lg mx-auto grid grid-cols-3 h-16">
         <Link
           href="/"
           className={`flex flex-col items-center justify-center gap-1 transition-colors font-semibold text-xs ${
@@ -55,18 +55,31 @@ export function BottomNav() {
           }`}
         >
           <Camera className="w-5 h-5" />
-          <span>Capturar Equipo</span>
+          <span>Capturar</span>
+        </Link>
+        <Link
+          href="/escanear"
+          className={`flex flex-col items-center justify-center gap-1 transition-colors font-semibold text-xs border-x border-slate-100 ${
+            pathname === "/escanear"
+              ? "text-blue-700 bg-blue-100/70"
+              : "text-blue-600 hover:text-blue-800"
+          }`}
+        >
+          <div className="p-1 rounded-lg bg-blue-600 text-white">
+            <ScanLine className="w-4 h-4" />
+          </div>
+          <span className="font-bold">Escanear QR</span>
         </Link>
         <Link
           href="/registros"
-          className={`flex flex-col items-center justify-center gap-1 transition-colors font-semibold text-xs border-l border-slate-100 ${
+          className={`flex flex-col items-center justify-center gap-1 transition-colors font-semibold text-xs ${
             pathname === "/registros"
               ? "text-indigo-600 bg-indigo-50/50"
               : "text-slate-600 hover:text-indigo-600"
           }`}
         >
           <ClipboardList className="w-5 h-5" />
-          <span>Registros / Exportar</span>
+          <span>Inventario</span>
         </Link>
       </div>
     </nav>

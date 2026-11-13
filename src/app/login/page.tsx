@@ -39,7 +39,22 @@ export default function LoginPage() {
         throw new Error(data.error || "Credenciales inválidas.");
       }
 
-      router.push("/");
+      // Validar retorno seguro para evitar vulnerabilidades de Open Redirect
+      let destination = "/";
+      if (typeof window !== "undefined") {
+        const rawReturn = new URLSearchParams(window.location.search).get(
+          "returnTo"
+        );
+        if (
+          rawReturn &&
+          rawReturn.startsWith("/") &&
+          !rawReturn.startsWith("//")
+        ) {
+          destination = rawReturn;
+        }
+      }
+
+      router.push(destination);
       router.refresh();
     } catch (err: unknown) {
       setError(

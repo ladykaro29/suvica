@@ -32,6 +32,8 @@ import {
   ChevronUp,
   UserCheck2,
   Printer,
+  QrCode,
+  ScanLine,
 } from "lucide-react";
 import { compressImageClient } from "@/lib/image-compression";
 import { trabajadoresFallback } from "@/lib/fallback-store";
@@ -40,6 +42,8 @@ import {
   saveDeviceToLocalVault,
   markDeviceDeletedInVault,
 } from "@/lib/local-vault";
+import { EtiquetaQRModal } from "@/components/EtiquetaQRModal";
+import { QRScannerModal } from "@/components/QRScannerModal";
 
 type TipoEquipo = "Laptop" | "Celular" | "Impresora" | "Radio" | "Otro";
 type PropiedadEquipo = "Corporativo" | "Personal";
@@ -139,6 +143,10 @@ export default function CapturaInventarioPage() {
     type: "success" | "error" | "info";
     text: string;
   } | null>(null);
+  const [etiquetaDevice, setEtiquetaDevice] = useState<any | null>(null);
+  const [ultimoGuardadoParaEtiqueta, setUltimoGuardadoParaEtiqueta] =
+    useState<any | null>(null);
+  const [showScannerModal, setShowScannerModal] = useState(false);
 
   const formStepRef = useRef<HTMLDivElement | null>(null);
 
@@ -574,8 +582,7 @@ export default function CapturaInventarioPage() {
         throw new Error(data.error || "Error al guardar el equipo.");
       }
 
-      // Guardar también en la bóveda local del navegador como respaldo automático
-      saveDeviceToLocalVault({
+      const savedRecord = {
         ...data,
         trabajador: data.trabajador || {
           id: selectedTrabajador.id,
@@ -585,7 +592,11 @@ export default function CapturaInventarioPage() {
           departamento: selectedTrabajador.departamento,
           empresa: selectedTrabajador.empresa,
         },
-      });
+      };
+
+      // Guardar también en la bóveda local del navegador como respaldo automático
+      saveDeviceToLocalVault(savedRecord);
+      setUltimoGuardadoParaEtiqueta(savedRecord);
 
       // Actualización optimista inmediata en memoria (0ms) + sincronización en segundo plano
       const actuales = selectedTrabajador.dispositivos || [];
@@ -1252,6 +1263,19 @@ export default function CapturaInventarioPage() {
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
+                              onClick={() =>
+                                setEtiquetaDevice({
+                                  ...d,
+                                  trabajador: selectedTrabajador,
+                                })
+                              }
+                              className="p-1 text-[11px] font-bold text-slate-800 bg-slate-200 hover:bg-slate-300 rounded-lg inline-flex items-center gap-1 transition"
+                              title="Generar e imprimir etiqueta con código QR"
+                            >
+                              <QrCode className="w-3.5 h-3.5 text-blue-700" />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => handleStartEditDispositivo(d)}
                               className="px-2 py-1 text-[11px] font-bold text-blue-700 bg-blue-100/80 hover:bg-blue-200 rounded-lg inline-flex items-center gap-1 transition"
                               title="Editar este equipo"
@@ -1465,6 +1489,16 @@ export default function CapturaInventarioPage() {
 
           {statusMessage.type === "success" && selectedTrabajador && (
             <div className="flex flex-wrap items-center gap-2 pt-1">
+              {ultimoGuardadoParaEtiqueta && (
+                <button
+                  type="button"
+                  onClick={() => setEtiquetaDevice(ultimoGuardadoParaEtiqueta)}
+                  className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold px-3 py-2 rounded-xl text-xs shadow-xs transition"
+                >
+                  <QrCode className="w-3.5 h-3.5 text-blue-300" />
+                  <span>Imprimir Etiqueta QR</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -1900,6 +1934,26 @@ export default function CapturaInventarioPage() {
             </form>
           </div>
         </div>
+      )}
+      {/* Modal para Generar e Imprimir Etiqueta QR */}
+      {etiquetaDevice && (
+        <EtiquetaQRModal
+          dispositivos={[etiquetaDevice]}
+          onClose={() => setEtiquetaDevice(null)}
+          titulo={`Etiqueta QR: ${
+            etiquetaDevice.codigoInventario ||
+            etiquetaDevice.marcaModelo ||
+            "Equipo"
+          }`}
+        />
+      )}
+
+      {/* Modal de Escaneo en Vivo con Cámara */}
+      {showScannerModal && (
+        <QRScannerModal
+          isOpen={showScannerModal}
+          onClose={() => setShowScannerModal(false)}
+        />
       )}
     </div>
   );

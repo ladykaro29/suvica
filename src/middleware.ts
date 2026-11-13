@@ -28,8 +28,11 @@ export function middleware(req: NextRequest) {
       );
     }
 
-    // Si es una vista de la aplicación, redirigir a /login
+    // Si es una vista de la aplicación, redirigir a /login preservando la ruta de destino
     const loginUrl = new URL("/login", req.url);
+    if (pathname !== "/" && !pathname.startsWith("/login")) {
+      loginUrl.searchParams.set("returnTo", pathname + req.nextUrl.search);
+    }
     return NextResponse.redirect(loginUrl);
   }
 

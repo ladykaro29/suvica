@@ -27,8 +27,12 @@ import {
   ChevronUp,
   CheckCircle2,
   PenTool,
+  QrCode,
+  ScanLine,
 } from "lucide-react";
 import { SignaturePad } from "@/components/SignaturePad";
+import { EtiquetaQRModal } from "@/components/EtiquetaQRModal";
+import { QRScannerModal } from "@/components/QRScannerModal";
 import {
   mergeServerDevicesWithVault,
   saveDeviceToLocalVault,
@@ -100,6 +104,10 @@ export default function RegistrosPage() {
   const [storageMode, setStorageMode] = useState<"postgresql" | "local" | null>(
     null
   );
+  const [etiquetaDevices, setEtiquetaDevices] = useState<
+    DispositivoConTrabajador[] | null
+  >(null);
+  const [showScannerModal, setShowScannerModal] = useState(false);
 
   const cargarRegistros = useCallback(async () => {
     try {
@@ -414,23 +422,42 @@ export default function RegistrosPage() {
           </button>
         </div>
 
-        {/* Botones de Descarga CSV y Excel */}
-        <div className="grid grid-cols-2 gap-2.5 pt-1">
+        {/* Botones de Descarga CSV, Excel e Impresión de Etiquetas QR */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setEtiquetaDevices(dispositivos)}
+            disabled={dispositivos.length === 0}
+            className="py-2.5 px-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition disabled:opacity-50"
+            title="Generar e imprimir etiquetas QR para los equipos mostrados"
+          >
+            <QrCode className="w-4 h-4 text-white" />
+            <span>Etiquetas QR ({dispositivos.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowScannerModal(true)}
+            className="py-2.5 px-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition"
+            title="Abrir cámara para escanear QR de un equipo"
+          >
+            <ScanLine className="w-4 h-4 text-white" />
+            <span>Escanear QR</span>
+          </button>
           <a
             href="/api/dispositivos?format=csv"
             download
-            className="py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition"
+            className="py-2.5 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition"
           >
             <Download className="w-4 h-4" />
-            <span>Exportar CSV</span>
+            <span>CSV</span>
           </a>
           <a
             href="/api/dispositivos?format=excel"
             download
-            className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition"
+            className="py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition"
           >
             <FileSpreadsheet className="w-4 h-4" />
-            <span>Exportar Excel</span>
+            <span>Excel</span>
           </a>
         </div>
       </section>
@@ -613,8 +640,17 @@ export default function RegistrosPage() {
                                 )}
                               </div>
 
-                              {/* Botones de Editar y Eliminar */}
+                              {/* Botones de Etiqueta QR, Editar y Eliminar */}
                               <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setEtiquetaDevices([d])}
+                                  className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-xs transition"
+                                  title="Generar e imprimir etiqueta con código QR"
+                                >
+                                  <QrCode className="w-3 h-3 text-blue-300" />
+                                  <span>QR</span>
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => handleOpenEdit(d)}
@@ -779,8 +815,17 @@ export default function RegistrosPage() {
                     </h3>
                   </div>
 
-                  {/* Botones de Editar y Eliminar */}
+                  {/* Botones de Etiqueta QR, Editar y Eliminar */}
                   <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setEtiquetaDevices([d])}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold inline-flex items-center gap-1 shadow-xs transition"
+                      title="Generar e imprimir etiqueta con código QR"
+                    >
+                      <QrCode className="w-3.5 h-3.5 text-blue-300" />
+                      <span>QR</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleOpenEdit(d)}
@@ -1172,6 +1217,30 @@ export default function RegistrosPage() {
             </form>
           </div>
         </div>
+      )}
+      {/* Modal de Generación e Impresión de Etiquetas con Código QR */}
+      {etiquetaDevices && (
+        <EtiquetaQRModal
+          dispositivos={etiquetaDevices}
+          onClose={() => setEtiquetaDevices(null)}
+          titulo={
+            etiquetaDevices.length === 1
+              ? `Etiqueta QR: ${
+                  etiquetaDevices[0].codigoInventario ||
+                  etiquetaDevices[0].marcaModelo ||
+                  "Equipo"
+                }`
+              : `Etiquetas QR de Inventario (${etiquetaDevices.length} equipos)`
+          }
+        />
+      )}
+
+      {/* Modal de Escaneo en Vivo con Cámara */}
+      {showScannerModal && (
+        <QRScannerModal
+          isOpen={showScannerModal}
+          onClose={() => setShowScannerModal(false)}
+        />
       )}
     </div>
   );
