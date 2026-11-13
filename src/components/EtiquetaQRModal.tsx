@@ -17,8 +17,10 @@ import {
   ShieldCheck,
   Check,
   Share2,
+  FileImage,
 } from "lucide-react";
 import { generateQRDataUrl } from "@/lib/qr-generator";
+import { renderEtiquetaCompletaToPng } from "@/lib/render-etiqueta-canvas";
 
 export interface DispositivoEtiqueta {
   id: string;
@@ -57,6 +59,8 @@ export function EtiquetaQRModal({
   const [generating, setGenerating] = useState(true);
   const [copiado, setCopiado] = useState(false);
   const [tamanoEtiqueta, setTamanoEtiqueta] = useState<"estandar" | "compacta">("estandar");
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadingBatch, setDownloadingBatch] = useState(false);
   const printableRef = useRef<HTMLDivElement>(null);
 
   // Generar QR para cada dispositivo (apunta a la URL de auditoría)
@@ -103,7 +107,53 @@ export function EtiquetaQRModal({
     window.print();
   };
 
-  const handleDescargarQR = (dataUrl: string, codigo: string) => {
+  // Descarga la imagen PNG de la ETIQUETA FÍSICA COMPLETA (incluye encabezado, QR, modelo, serial y datos)
+  const handleDescargarEtiquetaCompleta = async (
+    d: DispositivoEtiqueta,
+    qrUrl: string,
+    codigo: string
+  ) => {
+    try {
+      setDownloadingId(d.id);
+      const pngData = await renderEtiquetaCompletaToPng(d, qrUrl);
+      const link = document.createElement("a");
+      link.href = pngData;
+      link.download = `ETIQUETA-${codigo || "inventario"}.png`;
+      link.click();
+    } catch (err) {
+      console.error("Error generando imagen de etiqueta:", err);
+      alert("No se pudo generar la imagen de la etiqueta completa.");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  // Descargar todas las etiquetas completas de la lista
+  const handleDescargarTodasLasEtiquetas = async () => {
+    setDownloadingBatch(true);
+    try {
+      for (const d of dispositivos) {
+        const qrUrl = qrMap[d.id];
+        if (!qrUrl) continue;
+        const codigoActivo =
+          d.codigoInventario ||
+          `INV-${d.tipoEquipo.slice(0, 3).toUpperCase()}-${d.id.slice(-4).toUpperCase()}`;
+        const pngData = await renderEtiquetaCompletaToPng(d, qrUrl);
+        const link = document.createElement("a");
+        link.href = pngData;
+        link.download = `ETIQUETA-${codigoActivo}.png`;
+        link.click();
+        // Breve pausa para evitar que el navegador limite descargas continuas
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    } catch (err) {
+      console.error("Error en descarga por lote:", err);
+    } finally {
+      setDownloadingBatch(false);
+    }
+  };
+
+  const handleDescargarSoloQR = (dataUrl: string, codigo: string) => {
     const link = document.createElement("a");
     link.href = dataUrl;
     link.download = `QR-${codigo || "inventario"}.png`;
@@ -227,12 +277,28 @@ export function EtiquetaQRModal({
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={handleDescargarTodasLasEtiquetas}
+                disabled={generating || dispositivos.length === 0 || downloadingBatch}
+                className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition disabled:opacity-50"
+                title="Descargar imagen PNG completa de la etiqueta física para rotulado"
+              >
+                <Download className="w-4 h-4 text-white" />
+                <span>
+                  {downloadingBatch
+                    ? "Generando..."
+                    : dispositivos.length === 1
+                    ? "Descargar Etiqueta (PNG)"
+                    : `Descargar Todas (${dispositivos.length})`}
+                </span>
+              </button>
+              <button
+                type="button"
                 onClick={handlePrint}
                 disabled={generating || dispositivos.length === 0}
-                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition disabled:opacity-50"
+                className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition disabled:opacity-50"
               >
                 <Printer className="w-4 h-4 text-emerald-400" />
-                <span>Imprimir {dispositivos.length === 1 ? "Etiqueta" : `Etiquetas (${dispositivos.length})`}</span>
+                <span>Imprimir {dispositivos.length === 1 ? "Etiqueta" : `(${dispositivos.length})`}</span>
               </button>
             </div>
           </div>
@@ -365,15 +431,38 @@ export function EtiquetaQRModal({
                       <div className="mt-1.5 pt-1 border-t border-slate-800 text-[8px] font-bold uppercase tracking-wider text-slate-600 flex items-center justify-between">
                         <span>SUVICA • NO REMOVER ETIQUETA</span>
                         {qrUrl && (
-                          <button
-                            type="button"
-                            onClick={() => handleDescargarQR(qrUrl, codigoActivo)}
-                            className="text-blue-700 hover:underline print:hidden flex items-center gap-0.5 font-bold"
-                            title="Descargar solo imagen QR en PNG"
-                          >
-                            <Download className="w-2.5 h-2.5" />
-                            <span>PNG</span>
-                          </button>
+                          <div className="flex items-center gap-1.5 print:hidden">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleDescargarEtiquetaCompleta(
+                                  d,
+                                  qrUrl,
+                                  codigoActivo
+                                )
+                              }
+                              disabled={downloadingId === d.id}
+                              className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-[9px] inline-flex items-center gap-1 shadow-2xs transition"
+                              title="Descargar imagen PNG de la etiqueta física completa"
+                            >
+                              <Download className="w-2.5 h-2.5" />
+                              <span>
+                                {downloadingId === d.id
+                                  ? "Generando..."
+                                  : "Descargar Etiqueta"}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleDescargarSoloQR(qrUrl, codigoActivo)
+                              }
+                              className="text-slate-400 hover:text-slate-700 text-[9px] underline"
+                              title="Descargar únicamente el código QR cuadrado"
+                            >
+                              Solo QR
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
